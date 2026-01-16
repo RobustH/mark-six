@@ -294,7 +294,54 @@ def run_backtest(strategy, df, odds_profile):
 
 ---
 
-## 5. 💻 前端实现细节 (Vue 3)
+---
+
+### 4.3 Command: `get_replay_state`
+
+> 用于手动回放模式，获取指定期数的完整状态。
+
+**Request**: `{ "cmd": "get_replay_state", "params": { "period": "2026005" } }`
+**Response**:
+```json
+{
+  "status": "ok",
+  "data": {
+    "period": "2026005",
+    "result": { "special": 27, "n1": 38, "color": 2, "zodiac": 4, "date": "2026-01-13" },
+    "stats": {
+      "omission": { "color_0": 2, "zodiac_4": 0 },
+      "freq_100": { "color_0": 2 }
+    }
+  }
+}
+```
+
+### 4.4 Command: `load_data_source`
+
+> 动态切换 Python 引擎加载的 Feather 文件。
+
+**Request**: `{ "cmd": "load_data", "params": { "file_path": "F:/data/2026.feather" } }`
+**Response**: `{ "status": "ok", "message": "Data loaded successfully" }`
+
+### 4.5 Command: `get_data_stats`
+
+> 获取当前数据集的元数据（起止期号、总记录数）。
+
+**Request**: `{ "cmd": "get_data_stats" }`
+**Response**: 
+```json
+{
+  "status": "ok",
+  "data": {
+    "count": 150,
+    "min_period": "2026001",
+    "max_period": "2026150",
+    "periods": ["2026001", "2026002", ...]
+  }
+}
+```
+
+---
 
 ### 5.1 Store 设计 (Pinia)
 
