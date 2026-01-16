@@ -1,14 +1,6 @@
-use tauri::Emitter;
-use tauri_plugin_shell::ShellExt;
-use tauri_plugin_shell::process::CommandEvent;
-use serde_json::Value;
-use std::sync::Arc;
-use tokio::sync::Mutex;
+mod data_manager;
 
-struct PythonState {
-    stdin: Option<tauri_plugin_shell::process::CommandChild>,
-}
-
+// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
 async fn run_backtest_simulation(
     state: tauri::State<'_, Arc<Mutex<PythonState>>>,
@@ -158,46 +150,12 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
-        .manage(python_state.clone())
-        .setup(move |app| {
-            let app_handle = app.handle().clone();
-            let python_state_inner = python_state.clone();
-
-            tauri::async_runtime::spawn(async move {
-                let shell = app_handle.shell();
-                let (mut events, child) = shell
-                    .command("python")
-                    .args(["f:\\demo\\mark-six\\python\\main.py"])
-                    .spawn()
-                    .expect("无法启动 Python 引擎");
-
-                {
-                    let mut s = python_state_inner.lock().await;
-                    s.stdin = Some(child);
-                }
-
-                while let Some(event) = events.recv().await {
-                    match event {
-                        CommandEvent::Stdout(line) => {
-                            let msg = String::from_utf8_lossy(&line);
-                            app_handle.emit("python-response", msg).unwrap();
-                        }
-                        CommandEvent::Stderr(line) => {
-                            eprintln!("Python 错误: {}", String::from_utf8_lossy(&line));
-                        }
-                        _ => {}
-                    }
-                }
-            });
-
-            Ok(())
-        })
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
-            run_backtest_simulation,
-            load_data_source,
-            get_replay_state,
-            get_data_stats,
-            greet
+            greet,
+            data_manager::import_excel,
+            data_manager::get_historical_data,
+            data_manager::get_historical_years
         ])
         .run(tauri::generate_context!())
         .expect("运行 tauri 应用时出错");

@@ -73,17 +73,25 @@
 
 ### 6.1 💾 历史数据管理模块
 
-* **功能**：Excel 导入、数据校验（期号/号码）、版本快照、数据清洗。
-* **规划**：后续支持 API 自动每日更新。
+* **功能**：Excel 导入（支持单文件多子表读取）、按年份自动分表、数据存储、数据展示。
+* **特性**：
+    * **多表合并**：导入时自动读取 Excel 内所有子表并合并。
+    * **年份分组**：根据日期自动将数据存储为年度文件（如 `2024.feather`）以及全量汇总文件（`all.feather`）。
+    * **自动解析**：导入过程中自动计算并存储生肖、波色（红/蓝/绿）、单双属性。
+    * **本地化存储**：数据存储在项目根目录的 `/data/history/` 下，确保数据透明可控。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `period` | string | 期号 (e.g., "2024001") |
-| `special_number` | int | 特码号码 |
-| `numbers` | list[int] | 正码 1~6 |
-| `date` | datetime | 开奖日期 |
-| `year` | int | 年份 |
-| `zodiac` | string | 对应生肖（动态计算） |
+| `period` | string | 期号 (e.g., "001") |
+| `date` | string | 开奖日期 (YYYY-MM-DD) |
+| `n1...n6` | int | 正码 1~6 的原始数字 |
+| `n1_zodiac...` | string | 对应位置的生肖 |
+| `n1_color...` | string | 对应位置的波色 (red/blue/green) |
+| `n1_odd...` | bool | 是否为单数 |
+| `special` | int | 特码号码 |
+| `special_zodiac` | string | 特码生肖 |
+| `special_color` | string | 特码波色 |
+| `special_odd`| bool | 特码单双 |
 
 ### 6.2 📊 历史开奖统计模块 (Historical Statistics) <span style="color:red">[NEW]</span>
 
@@ -268,12 +276,10 @@
 
 ## 7. 🗄️ 数据模型 (简化版)
 
-* `PlayType` (id, name, hit_rule)
-* `OddsProfile` (id, play_type_id, odds, version, rebate, max_payout, valid_from, valid_to)
-* `StatisticsCache` (period, type, dimension, value, omission_count, frequency) <span style="color:red">[NEW]</span>
+* `HistoricalRecord`: { `period`, `date`, `n1`~`n6`, `special`, `*_zodiac`, `*_color`, `*_odd` }
+* `StatisticsCache` (period, type, dimension, value, omission_count, frequency)
 * `EntryRule` (id, rules, operator)
 * `Strategy` (id, entry_rule_id, bet_rule_id)
-* `ZodiacMapping` (year, zodiac)
 * `BacktestTask` (id, strategy_id, odds_id, bankroll, status)
 * `BacktestEvent` (task_id, period, bet, profit, hit)
 
