@@ -3,7 +3,23 @@
     <el-card>
       <template #header>
         <div class="card-header">
-          <span>策略回放/手动回测 (Replay Mode)</span>
+          <div class="left">
+            <span>策略回放/手动回测 (Replay Mode)</span>
+            <el-select 
+              v-model="selectedStrategyId" 
+              placeholder="选择要模拟的策略" 
+              clearable 
+              style="width: 200px; margin-left: 15px;"
+              @change="handleStrategyChange"
+            >
+              <el-option
+                v-for="s in strategiesStore.strategies"
+                :key="s.id"
+                :label="s.name"
+                :value="s.id"
+              />
+            </el-select>
+          </div>
           <div class="controls">
              <el-button-group>
                <el-button icon="ArrowLeft" @click="prevPeriod" :disabled="loading">上一期</el-button>
@@ -22,6 +38,17 @@
       </template>
       
       <div v-loading="loading" class="replay-content">
+        <!-- Signal Indicator -->
+        <div v-if="currentState && currentState.signal" class="signal-alert">
+           <el-alert
+             :title="`策略信号触发: 投注 ${currentState.signal.target}`"
+             :type="currentState.signal.is_hit ? 'success' : 'warning'"
+             :description="currentState.signal.is_hit ? '✅ 本期中奖 (HIT!)' : '❌ 本期未中 (MISS)'"
+             show-icon
+             :closable="false"
+           />
+        </div>
+
         <!-- Current Period Info -->
         <div v-if="currentState" class="period-info">
            <h2>第 {{ currentState.period }} 期</h2>
@@ -85,17 +112,23 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue';
-import { invoke } from '@tauri-apps/api/core'; // Tauri v2
+import { ref, onMounted, onUnmounted, computed } from 'vue';
+import { invoke } from '@tauri-apps/api/core';
 import { ElMessage } from 'element-plus';
-// Note: standard tauri API might be different in v2 depending on setup.
-// Using @tauri-apps/api/core is standard for V2.
+import { useStrategiesStore } from '../stores/strategies';
+import { useEntryRulesStore } from '../stores/entryRules';
+import { useMoneyRulesStore } from '../stores/moneyRules';
+
+const strategiesStore = useStrategiesStore();
+const entryRulesStore = useEntryRulesStore();
+const moneyRulesStore = useMoneyRulesStore();
 
 const loading = ref(false);
 const currentState = ref<any>(null);
-const currentPeriod = ref(2023000); // Start point
+const currentPeriod = ref(2023000);
 const isPlaying = ref(false);
 const playSpeed = ref(1000);
+const selectedStrategyId = ref('');
 let timer: any = null;
 
 const ZODIAC_NAMES = ['鼠', '牛', '虎', '兔', '龙', '蛇', '马', '羊', '猴', '鸡', '狗', '猪'];
@@ -104,20 +137,41 @@ const getZodiacName = (idx: number) => ZODIAC_NAMES[idx] || idx;
 const getColorName = (c: number) => ['红波', '蓝波', '绿波'][c];
 const getColorType = (c: number) => ['danger', 'primary', 'success'][c];
 
+// 计算要发送给后端的完整配置
+const currentStrategyConfig = computed(() => {
+    if (!selectedStrategyId.value) return null;
+    const strategy = strategiesStore.strategies.find(s => s.id === selectedStrategyId.value);
+    if (!strategy) return null;
+    
+    const entry = entryRulesStore.getRuleById(strategy.entryRuleId);
+    const money = moneyRulesStore.getRuleById(strategy.moneyRuleId);
+    
+    if (!entry || !money) return null;
+    return { entry, money };
+});
+
+import { callPython } from '../utils/python';
+
 const fetchState = async (period: string | number) => {
   loading.value = true;
   try {
-    const res: any = await invoke('get_replay_state', { period: String(period) });
+    const params: any = { period: String(period) };
+    if (currentStrategyConfig.value) {
+        params.strategy_config = JSON.parse(JSON.stringify(currentStrategyConfig.value));
+    }
+    
+    // 使用 callPython 替代 invoke，因为它是异步 sidecar
+    const res = await callPython('get_replay_state', params);
     if (res && res.status === 'ok') {
       currentState.value = res.data;
       currentPeriod.value = parseInt(res.data.period);
     } else {
       console.error(res);
-      // If error (e.g. period not found/end of data), stop playing
       if (isPlaying.value) togglePlay();
     }
-  } catch (e) {
-    console.error("IPC Error:", e);
+  } catch (e: any) {
+    console.error("Fetch State 错误:", e);
+    ElMessage.error(e.message || "请求超时");
     if (isPlaying.value) togglePlay();
   } finally {
     loading.value = false;
@@ -130,21 +184,32 @@ const currentIndex = ref(-1);
 const initData = async () => {
     loading.value = true;
     try {
-        const res: any = await invoke('get_data_stats');
-        if (res.status === 'ok' && res.data.count > 0) {
+        await Promise.all([
+            strategiesStore.init(),
+            entryRulesStore.init(),
+            moneyRulesStore.init()
+        ]);
+        
+        // 使用 callPython
+        const res = await callPython('get_data_stats');
+        if (res.status === 'ok' && res.data && res.data.count > 0) {
             allPeriods.value = res.data.periods;
-            // Default to first period if current not set
             if (currentIndex.value === -1) {
                 currentIndex.value = 0;
                 fetchState(allPeriods.value[0]);
             }
-        } else {
-             ElMessage.warning("未加载数据或数据为空");
         }
-    } catch (e) {
-        console.error("Init failed", e);
+    } catch (e: any) {
+        console.error("初始化数据失败", e);
+        ElMessage.error("初始化数据失败: " + (e.message || "Unknown error"));
     } finally {
         loading.value = false;
+    }
+};
+
+const handleStrategyChange = () => {
+    if (currentIndex.value !== -1) {
+        fetchState(allPeriods.value[currentIndex.value]);
     }
 };
 
@@ -190,6 +255,9 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.card-header { display: flex; justify-content: space-between; align-items: center; }
+.card-header .left { display: flex; align-items: center; }
+.signal-alert { margin-bottom: 20px; }
 .period-info { text-align: center; }
 .balls { display: flex; justify-content: center; gap: 10px; margin: 20px 0; }
 .ball { width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; color: white; }
@@ -199,4 +267,5 @@ onUnmounted(() => {
 .stat-item { display: flex; flex-direction: column; align-items: center; padding: 5px; border: 1px solid #eee; border-radius: 4px; }
 .value { font-weight: bold; }
 .value.high { color: red; }
+
 </style>

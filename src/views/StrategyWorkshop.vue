@@ -28,7 +28,7 @@
           <el-table-column fixed="right" label="操作" width="200">
             <template #default="scope">
               <el-button link type="primary" size="small" @click="openDrawer(scope.row)">编辑</el-button>
-              <el-button link type="primary" size="small">立即回测</el-button>
+              <el-button link type="primary" size="small" @click="handleRunBacktest(scope.row)" :loading="backtestLoading">立即回测</el-button>
               <el-button link type="danger" size="small" @click="handleDelete(scope.row.id)">删除</el-button>
             </template>
           </el-table-column>
@@ -37,7 +37,50 @@
       </div>
     </el-card>
 
+    <!-- Backtest Result Dialog -->
+    <el-dialog v-model="resultDialogVisible" title="回测报告 (Backtest Report)" width="70%">
+      <div v-if="backtestResult" class="result-container">
+        <el-row :gutter="20">
+          <el-col :span="6">
+            <el-statistic title="最终资金" :value="backtestResult.summary.final_capital" />
+          </el-col>
+          <el-col :span="6">
+            <el-statistic title="总利润" :value="backtestResult.summary.total_profit" />
+          </el-col>
+          <el-col :span="6">
+            <el-statistic title="交易次数" :value="backtestResult.summary.total_trades" />
+          </el-col>
+          <el-col :span="6">
+            <el-statistic title="胜率" :value="(backtestResult.summary.win_rate * 100).toFixed(2) + '%'" />
+          </el-col>
+        </el-row>
+        
+        <el-divider>最近交易记录 (Recent Trades)</el-divider>
+        <el-table :data="backtestResult.trades" size="small" border stripe>
+          <el-table-column prop="period" label="期数" width="100" />
+          <el-table-column prop="bet_amount" label="投注" width="80" />
+          <el-table-column prop="is_hit" label="结果" width="80">
+            <template #default="scope">
+              <el-tag :type="scope.row.is_hit ? 'success' : 'danger'">{{ scope.row.is_hit ? '中' : '挂' }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="profit" label="盈亏" width="100">
+            <template #default="scope">
+              <span :style="{ color: scope.row.profit >= 0 ? '#67C23A' : '#F56C6C' }">
+                {{ scope.row.profit >= 0 ? '+' : '' }}{{ scope.row.profit }}
+              </span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="capital" label="结余" />
+        </el-table>
+      </div>
+      <template #footer>
+        <el-button @click="resultDialogVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
     <!-- Strategy Editor Drawer -->
+
     <el-drawer
       v-model="drawerVisible"
       :title="isEditMode ? '编辑策略' : '组装新策略'"
@@ -94,7 +137,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, onMounted } from 'vue';
 import { useStrategiesStore } from '../stores/strategies';
 import { useEntryRulesStore } from '../stores/entryRules';
 import { useMoneyRulesStore } from '../stores/moneyRules';
@@ -109,6 +152,48 @@ const moneyRulesStore = useMoneyRulesStore();
 
 const drawerVisible = ref(false);
 const isEditMode = ref(false);
+const resultDialogVisible = ref(false);
+const backtestLoading = ref(false);
+const backtestResult = ref<any>(null);
+
+onMounted(async () => {
+    await entryRulesStore.init();
+    await moneyRulesStore.init();
+    await strategiesStore.init();
+});
+
+import { callPython } from '../utils/python';
+
+const handleRunBacktest = async (strategy: StrategyConfig) => {
+    const entryRule = entryRulesStore.getRuleById(strategy.entryRuleId);
+    const moneyRule = moneyRulesStore.getRuleById(strategy.moneyRuleId);
+    
+    if (!entryRule || !moneyRule) {
+        ElMessage.error('无法加载组成规则，请检查是否存在');
+        return;
+    }
+    
+    backtestLoading.value = true;
+    try {
+        const params = {
+            entry: entryRule,
+            money: moneyRule
+        };
+        // 使用 callPython
+        const res = await callPython('run_backtest', params);
+        if (res.status === 'ok') {
+            backtestResult.value = res.data;
+            resultDialogVisible.value = true;
+        } else {
+            ElMessage.error('回测失败: ' + res.message);
+        }
+    } catch (e: any) {
+        console.error('Backtest failed', e);
+        ElMessage.error('系回测失败: ' + (e.message || "请求超时"));
+    } finally {
+        backtestLoading.value = false;
+    }
+};
 
 const defaultStrategy: Omit<StrategyConfig, 'id' | 'createTime' | 'updateTime'> = {
   name: '',
@@ -178,21 +263,20 @@ const handleSelectData = async () => {
         });
         
         if (selected) {
-            // Check if selected is string or array (based on multiple)
             const path = Array.isArray(selected) ? selected[0] : selected;
             currentDataFile.value = path;
             
-            // Invoke backend to load data
-            const res: any = await invoke('load_data_source', { filePath: path });
+            // 使用 callPython
+            const res = await callPython('load_data', { file_path: path });
             if (res.status === 'ok') {
                 ElMessage.success('数据加载成功');
             } else {
                 ElMessage.error('数据加载失败: ' + res.message);
             }
         }
-    } catch (e) {
+    } catch (e: any) {
         console.error('Selection failed', e);
-        ElMessage.error('选择文件失败');
+        ElMessage.error('选择文件失败: ' + (e.message || "请求超时"));
     }
 };
 

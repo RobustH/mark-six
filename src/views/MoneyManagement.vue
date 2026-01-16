@@ -91,12 +91,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { ref, watch, onMounted } from 'vue';
 import { useMoneyRulesStore } from '../stores/moneyRules';
 import type { MoneyRuleConfig, MoneyMode } from '../types/strategy';
 import { ElMessage, ElMessageBox } from 'element-plus';
 
 const moneyRulesStore = useMoneyRulesStore();
+
+onMounted(() => {
+    moneyRulesStore.init();
+});
 const drawerVisible = ref(false);
 const isEditMode = ref(false);
 const multipliersInput = ref('1, 2, 4, 8, 16');

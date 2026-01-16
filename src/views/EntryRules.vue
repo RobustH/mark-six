@@ -145,13 +145,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, onMounted } from 'vue';
 import { useEntryRulesStore } from '../stores/entryRules';
 import type { EntryRuleConfig, Condition } from '../types/strategy';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Delete, Plus } from '@element-plus/icons-vue';
 
 const entryRulesStore = useEntryRulesStore();
+
+onMounted(() => {
+    entryRulesStore.init();
+});
 const drawerVisible = ref(false);
 const isEditMode = ref(false);
 

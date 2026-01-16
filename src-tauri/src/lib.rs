@@ -1,108 +1,208 @@
+use tauri::Emitter;
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_shell::process::CommandEvent;
+use serde_json::Value;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
-// Defines the Python script path. 
-// Ideally should be dynamic or relative to resource path, but hardcoded for MVP efficiency.
-const PYTHON_SCRIPT: &str = r"f:/demo/mark-six/python/main.py";
-
-#[tauri::command]
-async fn run_backtest_simulation(app: tauri::AppHandle, payload: serde_json::Value) -> Result<serde_json::Value, String> {
-    run_python_command(&app, "run_backtest", payload).await
+struct PythonState {
+    stdin: Option<tauri_plugin_shell::process::CommandChild>,
 }
 
 #[tauri::command]
-async fn get_replay_state(app: tauri::AppHandle, period: String) -> Result<serde_json::Value, String> {
-    let payload = serde_json::json!({ "period": period });
-    run_python_command(&app, "get_replay_state", payload).await
-}
+async fn run_backtest_simulation(
+    state: tauri::State<'_, Arc<Mutex<PythonState>>>,
+    payload: Value,
+) -> Result<Value, String> {
+    let mut state = state.lock().await;
+    
+    if state.stdin.is_none() {
+        return Err("Python 引擎未运行".to_string());
+    }
 
-#[tauri::command]
-async fn get_data_stats(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
-    run_python_command(&app, "get_data_stats", serde_json::json!({})).await
-}
-
-async fn run_python_command(app: &tauri::AppHandle, cmd: &str, params: serde_json::Value) -> Result<serde_json::Value, String> {
-    let input_json = serde_json::json!({
-        "cmd": cmd,
-        "params": params
+    let child = state.stdin.as_mut().unwrap();
+    let req_id = payload.get("request_id").cloned();
+    
+    let cmd = serde_json::json!({
+        "cmd": "run_backtest",
+        "params": payload,
+        "request_id": req_id
     });
-    let input_str = input_json.to_string();
 
-    let (mut rx, mut child) = app.shell()
-        .command("python")
-        .args([PYTHON_SCRIPT])
-        .spawn()
-        .map_err(|e| e.to_string())?;
+    let cmd_str = cmd.to_string() + "\n";
+    child.write(cmd_str.as_bytes()).map_err(|e: tauri_plugin_shell::Error| e.to_string())?;
 
-    // Write input + newline
-    let data = format!("{}\n", input_str);
-    child.write(data.as_bytes()).map_err(|e| e.to_string())?;
-
-    // Read response
-    let mut response = String::new();
-    let mut found_response = false;
-
-    // Use a loop to read events
-    while let Some(event) = rx.recv().await {
-        match event {
-            CommandEvent::Stdout(line) => {
-                let s = String::from_utf8_lossy(&line);
-                response.push_str(&s);
-                // Check if we have a complete JSON object (heuristic or newline)
-                // Our python script prints JSON + flush.
-                // It usually comes in one chunk or line.
-                // Let's assume one line for now.
-                if response.trim().ends_with('}') {
-                    found_response = true;
-                    // Kill child as we are done with this one-off request
-                    let _ = child.kill(); 
-                    break;
-                }
-            }
-            CommandEvent::Stderr(line) => {
-                let s = String::from_utf8_lossy(&line);
-                println!("Python Stderr: {}", s);
-            }
-            CommandEvent::Terminated(_) => {
-                break;
-            }
-            _ => {}
-        }
-    }
-    
-    if !found_response && response.is_empty() {
-        return Err("No response from Python script".into());
-    }
-
-    // Attempt to parse
-    // The response might contain extra newlines
-    let trimmed = response.trim();
-    
-    // Log for debug
-    println!("Python Response: {}", trimmed);
-
-    serde_json::from_str(trimmed).map_err(|e| format!("Failed to parse JSON: {} | Content: {}", e, trimmed))
+    Ok(serde_json::json!({ "status": "sent" }))
 }
 
 #[tauri::command]
-async fn load_data_source(app: tauri::AppHandle, filePath: String) -> Result<serde_json::Value, String> {
-    let payload = serde_json::json!({ "file_path": filePath });
-    // Use "load_data" command string as expected by main.py
-    run_python_command(&app, "load_data", payload).await
+async fn load_data_source(
+    state: tauri::State<'_, Arc<Mutex<PythonState>>>,
+    payload: Value,
+) -> Result<Value, String> {
+    let mut state = state.lock().await;
+    if let Some(child) = state.stdin.as_mut() {
+        let req_id = payload.get("request_id").cloned();
+        let file_path = payload.get("file_path").and_then(|v| v.as_str()).unwrap_or("");
+        
+        let cmd = serde_json::json!({
+            "cmd": "load_data",
+            "params": { "file_path": file_path },
+            "request_id": req_id
+        });
+        let cmd_str = cmd.to_string() + "\n";
+        child.write(cmd_str.as_bytes()).map_err(|e: tauri_plugin_shell::Error| e.to_string())?;
+        Ok(serde_json::json!({ "status": "sent" }))
+    } else {
+        Err("Python 引擎未就绪".into())
+    }
+}
+
+#[tauri::command]
+async fn get_replay_state(
+    state: tauri::State<'_, Arc<Mutex<PythonState>>>,
+    payload: Value,
+) -> Result<Value, String> {
+    let mut state = state.lock().await;
+    if let Some(child) = state.stdin.as_mut() {
+        let req_id = payload.get("request_id").cloned();
+        let period = payload.get("period").and_then(|v| v.as_str()).unwrap_or("");
+        let strategy_config = payload.get("strategy_config").cloned();
+
+        let cmd = serde_json::json!({
+            "cmd": "get_replay_state",
+            "params": { 
+                "period": period,
+                "strategy_config": strategy_config
+            },
+            "request_id": req_id
+        });
+        let cmd_str = cmd.to_string() + "\n";
+        child.write(cmd_str.as_bytes()).map_err(|e: tauri_plugin_shell::Error| e.to_string())?;
+        Ok(serde_json::json!({ "status": "sent" }))
+    } else {
+        Err("Python 引擎未就绪".into())
+    }
+}
+
+#[tauri::command]
+async fn get_data_stats(
+    state: tauri::State<'_, Arc<Mutex<PythonState>>>,
+    payload: Value,
+) -> Result<Value, String> {
+    let mut state = state.lock().await;
+    if let Some(child) = state.stdin.as_mut() {
+        let req_id = payload.get("request_id").cloned();
+        let cmd = serde_json::json!({
+            "cmd": "get_data_stats",
+            "request_id": req_id
+        });
+        let cmd_str = cmd.to_string() + "\n";
+        child.write(cmd_str.as_bytes()).map_err(|e: tauri_plugin_shell::Error| e.to_string())?;
+        Ok(serde_json::json!({ "status": "sent" }))
+    } else {
+        Err("Python 引擎未就绪".into())
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let python_state = Arc::new(Mutex::new(PythonState { stdin: None }));
+
+    let migrations = vec![
+        tauri_plugin_sql::Migration {
+            version: 1,
+            description: "创建 entry_rules 表",
+            sql: "CREATE TABLE IF NOT EXISTS entry_rules (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT,
+                conditions TEXT NOT NULL,
+                logicOperator TEXT NOT NULL,
+                createTime INTEGER NOT NULL,
+                updateTime INTEGER NOT NULL
+            );",
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+        tauri_plugin_sql::Migration {
+            version: 2,
+            description: "创建 money_rules 表",
+            sql: "CREATE TABLE IF NOT EXISTS money_rules (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                mode TEXT NOT NULL,
+                params TEXT NOT NULL,
+                createTime INTEGER NOT NULL,
+                updateTime INTEGER NOT NULL
+            );",
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+        tauri_plugin_sql::Migration {
+            version: 3,
+            description: "创建 strategies 表",
+            sql: "CREATE TABLE IF NOT EXISTS strategies (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT,
+                entryRuleId TEXT NOT NULL,
+                moneyRuleId TEXT NOT NULL,
+                createTime INTEGER NOT NULL,
+                updateTime INTEGER NOT NULL
+            );",
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        }
+    ];
+
     tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_sql::Builder::default().add_migrations("sqlite:mark_six.db", migrations).build())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![greet, run_backtest_simulation, get_replay_state, load_data_source, get_data_stats])
+        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_opener::init())
+        .manage(python_state.clone())
+        .setup(move |app| {
+            let app_handle = app.handle().clone();
+            let python_state_inner = python_state.clone();
+
+            tauri::async_runtime::spawn(async move {
+                let shell = app_handle.shell();
+                let (mut events, child) = shell
+                    .command("python")
+                    .args(["f:\\demo\\mark-six\\python\\main.py"])
+                    .spawn()
+                    .expect("无法启动 Python 引擎");
+
+                {
+                    let mut s = python_state_inner.lock().await;
+                    s.stdin = Some(child);
+                }
+
+                while let Some(event) = events.recv().await {
+                    match event {
+                        CommandEvent::Stdout(line) => {
+                            let msg = String::from_utf8_lossy(&line);
+                            app_handle.emit("python-response", msg).unwrap();
+                        }
+                        CommandEvent::Stderr(line) => {
+                            eprintln!("Python 错误: {}", String::from_utf8_lossy(&line));
+                        }
+                        _ => {}
+                    }
+                }
+            });
+
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            run_backtest_simulation,
+            load_data_source,
+            get_replay_state,
+            get_data_stats,
+            greet
+        ])
         .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .expect("运行 tauri 应用时出错");
 }
 
-// Keep the existing greet function
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
