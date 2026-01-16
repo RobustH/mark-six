@@ -31,10 +31,28 @@ const router = createRouter({
           meta: { title: '基础配置 (玩法/赔率)' }
         },
         {
-          path: '/strategy',
-          name: 'strategy',
-          component: () => import('../views/StrategyEditor.vue'),
-          meta: { title: '策略与规则' }
+          path: '/strategy/workshop',
+          name: 'StrategyWorkshop',
+          component: () => import('../views/StrategyWorkshop.vue'),
+          meta: { title: '策略工坊 (Strategy Workshop)' }
+        },
+        {
+          path: '/strategy/rules/entry',
+          name: 'EntryRules',
+          component: () => import('../views/EntryRules.vue'),
+          meta: { title: '下注条件 (Entry Rules)' }
+        },
+        {
+          path: '/strategy/rules/money',
+          name: 'moneyRules',
+          component: () => import('../views/MoneyManagement.vue'),
+          meta: { title: '资金管理', keepAlive: true }
+        },
+        {
+          path: '/strategy/replay',
+          name: 'strategyReplay',
+          component: () => import('../views/StrategyReplay.vue'),
+          meta: { title: '策略回放' }
         },
         {
           path: '/backtest',
