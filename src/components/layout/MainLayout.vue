@@ -21,10 +21,18 @@
           <el-icon><TrendCharts /></el-icon>
           <span>历史开奖统计</span>
         </el-menu-item>
-        <el-menu-item index="/strategy">
-          <el-icon><Cpu /></el-icon>
-          <span>策略与规则</span>
-        </el-menu-item>
+        <el-sub-menu index="/strategy">
+          <template #title>
+            <el-icon><Cpu /></el-icon>
+            <span>策略与规则</span>
+          </template>
+          <el-menu-item index="/strategy/workshop">策略工坊</el-menu-item>
+          <el-sub-menu index="/strategy/rules">
+            <template #title>规则配置</template>
+            <el-menu-item index="/strategy/rules/entry">下注条件</el-menu-item>
+            <el-menu-item index="/strategy/rules/money">资金管理</el-menu-item>
+          </el-sub-menu>
+        </el-sub-menu>
         <el-menu-item index="/backtest">
           <el-icon><VideoPlay /></el-icon>
           <span>回测控制台</span>
