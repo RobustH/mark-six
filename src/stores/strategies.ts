@@ -34,8 +34,8 @@ export const useStrategiesStore = defineStore('strategies', () => {
 
         if (db) {
             await db.execute(
-                'INSERT INTO strategies (id, name, description, entryRuleId, moneyRuleId, createTime, updateTime) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-                [newStrategy.id, newStrategy.name, newStrategy.description || '', newStrategy.entryRuleId, newStrategy.moneyRuleId, newStrategy.createTime, newStrategy.updateTime]
+                'INSERT INTO strategies (id, name, description, entryRuleId, moneyRuleId, oddsProfileId, createTime, updateTime) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+                [newStrategy.id, newStrategy.name, newStrategy.description || '', newStrategy.entryRuleId, newStrategy.moneyRuleId, newStrategy.oddsProfileId || null, newStrategy.createTime, newStrategy.updateTime]
             );
         }
         strategies.value.push(newStrategy);
@@ -52,8 +52,8 @@ export const useStrategiesStore = defineStore('strategies', () => {
 
             if (db) {
                 await db.execute(
-                    'UPDATE strategies SET name = $1, description = $2, entryRuleId = $3, moneyRuleId = $4, updateTime = $5 WHERE id = $6',
-                    [newStrategy.name, newStrategy.description || '', newStrategy.entryRuleId, newStrategy.moneyRuleId, newStrategy.updateTime, id]
+                    'UPDATE strategies SET name = $1, description = $2, entryRuleId = $3, moneyRuleId = $4, oddsProfileId = $5, updateTime = $6 WHERE id = $7',
+                    [newStrategy.name, newStrategy.description || '', newStrategy.entryRuleId, newStrategy.moneyRuleId, newStrategy.oddsProfileId || null, newStrategy.updateTime, id]
                 );
             }
             strategies.value[index] = newStrategy;

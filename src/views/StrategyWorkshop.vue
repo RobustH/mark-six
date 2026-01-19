@@ -22,7 +22,8 @@
           <el-table-column label="组成规则">
             <template #default="scope">
               <el-tag type="info" style="margin-right: 5px;">Entry: {{ getEntryRuleName(scope.row.entryRuleId) }}</el-tag>
-              <el-tag type="warning">Money: {{ getMoneyRuleName(scope.row.moneyRuleId) }}</el-tag>
+              <el-tag type="warning" style="margin-right: 5px;">Money: {{ getMoneyRuleName(scope.row.moneyRuleId) }}</el-tag>
+              <el-tag type="success" v-if="scope.row.oddsProfileId">Odds: {{ getOddsProfileName(scope.row.oddsProfileId) }}</el-tag>
             </template>
           </el-table-column>
           <el-table-column fixed="right" label="操作" width="200">
@@ -125,6 +126,18 @@
           </div>
         </el-form-item>
 
+        <el-form-item label="赔率配置">
+          <el-select v-model="currentStrategy.oddsProfileId" placeholder="请选择赔率配置(可选)" clearable style="width: 100%">
+             <el-option
+               v-for="profile in oddsRulesStore.profiles"
+               :key="profile.id"
+               :label="`${profile.name} (${profile.odds}x)`"
+               :value="profile.id"
+             />
+          </el-select>
+          <div class="form-tip">可选，若不选则使用系统默认赔率</div>
+        </el-form-item>
+
       </el-form>
       <template #footer>
         <span class="dialog-footer">
@@ -141,14 +154,15 @@ import { ref, onMounted } from 'vue';
 import { useStrategiesStore } from '../stores/strategies';
 import { useEntryRulesStore } from '../stores/entryRules';
 import { useMoneyRulesStore } from '../stores/moneyRules';
+import { useOddsRulesStore } from '../stores/oddsRules';
 import type { StrategyConfig } from '../types/strategy';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { open } from '@tauri-apps/plugin-dialog';
-import { invoke } from '@tauri-apps/api/core';
 
 const strategiesStore = useStrategiesStore();
 const entryRulesStore = useEntryRulesStore();
 const moneyRulesStore = useMoneyRulesStore();
+const oddsRulesStore = useOddsRulesStore();
 
 const drawerVisible = ref(false);
 const isEditMode = ref(false);
@@ -159,6 +173,7 @@ const backtestResult = ref<any>(null);
 onMounted(async () => {
     await entryRulesStore.init();
     await moneyRulesStore.init();
+    await oddsRulesStore.init();
     await strategiesStore.init();
 });
 
@@ -167,6 +182,7 @@ import { callPython } from '../utils/python';
 const handleRunBacktest = async (strategy: StrategyConfig) => {
     const entryRule = entryRulesStore.getRuleById(strategy.entryRuleId);
     const moneyRule = moneyRulesStore.getRuleById(strategy.moneyRuleId);
+    const oddsProfile = strategy.oddsProfileId ? oddsRulesStore.getProfileById(strategy.oddsProfileId) : null;
     
     if (!entryRule || !moneyRule) {
         ElMessage.error('无法加载组成规则，请检查是否存在');
@@ -175,10 +191,13 @@ const handleRunBacktest = async (strategy: StrategyConfig) => {
     
     backtestLoading.value = true;
     try {
-        const params = {
+        const params: any = {
             entry: entryRule,
             money: moneyRule
         };
+        if (oddsProfile) {
+            params.odds = oddsProfile;
+        }
         // 使用 callPython
         const res = await callPython('run_backtest', params);
         if (res.status === 'ok') {
@@ -199,10 +218,16 @@ const defaultStrategy: Omit<StrategyConfig, 'id' | 'createTime' | 'updateTime'> 
   name: '',
   description: '',
   entryRuleId: '',
-  moneyRuleId: ''
+  moneyRuleId: '',
+  oddsProfileId: undefined
 };
 
 const currentStrategy = ref<Omit<StrategyConfig, 'id' | 'createTime' | 'updateTime'> & { id?: string }>({ ...defaultStrategy });
+
+const getOddsProfileName = (id: string) => {
+  const p = oddsRulesStore.getProfileById(id);
+  return p ? p.name : 'Unknown';
+};
 
 // Helper to display names in table
 const getEntryRuleName = (id: string) => {

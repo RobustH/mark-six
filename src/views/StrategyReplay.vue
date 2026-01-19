@@ -254,6 +254,7 @@ import { ElMessage } from 'element-plus';
 import { useStrategiesStore } from '../stores/strategies';
 import { useEntryRulesStore } from '../stores/entryRules';
 import { useMoneyRulesStore } from '../stores/moneyRules';
+import { useOddsRulesStore } from '../stores/oddsRules';
 
 interface ConditionResult {
     desc: string;
@@ -305,6 +306,7 @@ interface ReplayState {
 const strategiesStore = useStrategiesStore();
 const entryRulesStore = useEntryRulesStore();
 const moneyRulesStore = useMoneyRulesStore();
+const oddsRulesStore = useOddsRulesStore();
 
 const loading = ref(false);
 const currentState = ref<ReplayState | null>(null);
@@ -328,9 +330,10 @@ const currentStrategyConfig = computed(() => {
     
     const entry = entryRulesStore.getRuleById(strategy.entryRuleId);
     const money = moneyRulesStore.getRuleById(strategy.moneyRuleId);
+    const odds = strategy.oddsProfileId ? oddsRulesStore.getProfileById(strategy.oddsProfileId) : null;
     
     if (!entry || !money) return null;
-    return { entry, money };
+    return { entry, money, odds };
 });
 
 import { callPython } from '../utils/python';
@@ -378,7 +381,8 @@ const initData = async () => {
         await Promise.all([
             strategiesStore.init(),
             entryRulesStore.init(),
-            moneyRulesStore.init()
+            moneyRulesStore.init(),
+            oddsRulesStore.init()
         ]);
         
         // 0. 加载可用年份

@@ -47,6 +47,30 @@ export interface StrategyConfig {
     description?: string;
     entryRuleId: string; // Ref to EntryRuleConfig
     moneyRuleId: string; // Ref to MoneyRuleConfig
+    oddsProfileId?: string; // Ref to OddsProfile (optional)
+    createTime: number;
+    updateTime: number;
+}
+
+// 玩法类型枚举 (PRD 6.3)
+export type PlayType =
+    | 'special_number'   // 特码号码
+    | 'special_color'    // 特码波色 (红/蓝/绿)
+    | 'special_zodiac'   // 特码生肖
+    | 'special_parity'   // 特码单双
+    | 'special_size';    // 特码大小
+
+// 赔率配置接口 (PRD 6.4)
+export interface OddsProfile {
+    id: string;
+    name: string;
+    playType: PlayType;        // 对应玩法类型
+    odds: number;              // 固定赔率
+    rebate?: number;           // 返水 (可选)
+    maxPayout?: number;        // 封顶收益
+    version: string;           // 赔率版本号
+    validFrom?: string;        // 生效开始日期 (YYYY-MM-DD)
+    validTo?: string;          // 生效结束日期 (YYYY-MM-DD)
     createTime: number;
     updateTime: number;
 }

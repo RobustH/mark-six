@@ -176,6 +176,30 @@ pub fn run() {
                 updateTime INTEGER NOT NULL
             );",
             kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+        tauri_plugin_sql::Migration {
+            version: 4,
+            description: "创建 odds_profiles 表",
+            sql: "CREATE TABLE IF NOT EXISTS odds_profiles (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                playType TEXT NOT NULL,
+                odds REAL NOT NULL,
+                rebate REAL,
+                maxPayout REAL,
+                version TEXT NOT NULL,
+                validFrom TEXT,
+                validTo TEXT,
+                createTime INTEGER NOT NULL,
+                updateTime INTEGER NOT NULL
+            );",
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        },
+        tauri_plugin_sql::Migration {
+            version: 5,
+            description: "为 strategies 表添加 oddsProfileId 列",
+            sql: "ALTER TABLE strategies ADD COLUMN oddsProfileId TEXT;",
+            kind: tauri_plugin_sql::MigrationKind::Up,
         }
     ];
 
