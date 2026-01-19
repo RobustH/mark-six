@@ -10,14 +10,15 @@
               <el-option v-for="year in availableYears" :key="year" :label="year" :value="year" />
             </el-select>
             <el-button type="primary" @click="handleImport" :loading="importing">导入数据</el-button>
+            <el-button type="success" @click="handleSync" :loading="syncing">在线更新</el-button>
             <el-button @click="loadData" :loading="loading">刷新数据</el-button>
           </div>
         </div>
       </template>
 
       <el-table v-if="tableData.length > 0" :data="paginatedData" border stripe style="width: 100%"
-        height="calc(100vh - 250px)" >
-        <el-table-column prop="period" label="期号"  align="center" />
+        height="calc(100vh - 250px)">
+        <el-table-column prop="period" label="期号" align="center" />
         <el-table-column prop="date" label="开奖日期" align="center" />
         <el-table-column label="正码" align="center">
           <el-table-column label="正1" align="center">
@@ -112,6 +113,7 @@ import { ElMessage } from 'element-plus'
 const tableData = ref<any[]>([])
 const loading = ref(false)
 const importing = ref(false)
+const syncing = ref(false)
 const currentPage = ref(1)
 const pageSize = ref(50)
 const selectedYear = ref('')
@@ -165,6 +167,21 @@ const handleImport = async () => {
     ElMessage.error('导入失败: ' + error)
   } finally {
     importing.value = false
+  }
+}
+
+const handleSync = async () => {
+  syncing.value = true
+  try {
+    // 默认更新所有年份 (2000-至今)
+    const result: string = await invoke('fetch_historical_data', { years: null })
+    ElMessage.success(result)
+    await loadYears()
+    await loadData()
+  } catch (error: any) {
+    ElMessage.error('更新失败: ' + error)
+  } finally {
+    syncing.value = false
   }
 }
 
