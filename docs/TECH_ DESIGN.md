@@ -22,7 +22,7 @@ Architecture: Hybrid Rust/Python local desktop app
 # 📘 Tech Design Document: Mark Six Quant Platform (v2.4)
 
 > **Project**: Mark Six Backtest Platform  
-> **Version**: v2.5 (Manual Replay & Visualization Optimized)  
+> **Version**: v2.6 (Odds Module Integrated)  
 > **Last Updated**: 2026-01-19  
 
 ---
@@ -179,9 +179,13 @@ sequenceDiagram
 /app_data/
 ├── data/
 │   └── history.feather          # 核心数据，二进制列式存储 (Apache Arrow)
+├── db/
+│   └── mark_six.db              # SQLite 数据库，存储以下业务配置：
+│       ├── strategies           # 策略配置 (id, name, description, entryRuleId, moneyRuleId, oddsProfileId, ...)
+│       ├── entry_rules          # 进场规则
+│       ├── money_rules          # 资金管理规则
+│       └── odds_profiles        # 赔率配置 (id, name, playType, odds, rebate, maxPayout, version, ...)
 ├── config/
-│   ├── strategies.json          # 用户保存的策略集合
-│   ├── odds_profiles.json       # 赔率表（支持时间切片）
 │   ├── settings.json            # 全局配置
 │   └── zodiac_config.json       # 农历生肖区间映射表（PRD 6.10）
 ```
@@ -280,13 +284,18 @@ def calc_window_frequency(series: pd.Series, window: int) -> pd.Series:
 
 #### C. 回测执行器 (`Backtester`)
 
-职责：严格时间序列模拟，防未来函数。
+职责：严格时间序列模拟，防未来函数。支持动态赔率。
 
 ```python
 # /python/backtester.py
-def run_backtest(strategy, df, odds_profile):
+def run_backtest(strategy_config, df):
+    # strategy_config 包含: entry, money, odds (可选)
+    entry_rule = strategy_config.get('entry')
+    money_rule = strategy_config.get('money')
+    odds_config = strategy_config.get('odds') 
+    
     # Step 1: 预计算所有统计指标（遗漏、热度等）
-    df = precompute_stats(df, strategy.entry_rule)
+    df = precompute_stats(df, entry_rule)
     
     # Step 2: 时间位移（关键！）
     for col in ['omission_ref', 'freq_ref']:
@@ -309,7 +318,9 @@ def run_backtest(strategy, df, odds_profile):
             continue
             
         bet_amount = money_mgr.get_next_bet()
-        target_odds = get_odds_at_date(odds_profile, row['date'])  # 时间切片赔率
+        
+        # 赔率优先级：前端配置 > 系统默认
+        target_odds = self._get_odds(row['target_dim'], odds_config)
         
         # 结算：使用 T 期真实开奖
         hit = check_hit(row, strategy.play_type)
@@ -488,13 +499,16 @@ def run_backtest(strategy, df, odds_profile):
    - [x] 完成数据导入页面
    - [ ] 实现冷热号/遗漏榜单（支持排序）
 
-5. **Step 4: Replay & Visualization** [IN PROGRESS]
+5. **Step 4: Replay & Visualization** [DONE]
    - [x] 手动回放基础逻辑 (Prev/Next)
    - [x] 核心计算引擎 (Python Sidecar)
-   - [x] **策略信号穿透分析 (Visualized Evaluation)**
-   - [x] **数据源动态切换逻辑**
+   - [x] 策略信号穿透分析 (Visualized Evaluation)
+   - [x] 数据源动态切换逻辑
 
-6. **Step 5: Full Backtest Engine**
+6. **Step 5: Odds & Full Backtest Engine** [IN PROGRESS]
+   - [x] **实现赔率配置模块 (Frontend & DB)**
+   - [x] **策略与赔率关联逻辑**
+   - [x] **Python 回测引擎支持动态赔率计算**
    - [ ] 实现全量数据向量化回测
    - [ ] 对接 ECharts（资金曲线）
    - [ ] 实现 MDD / Ruin Probability 计算

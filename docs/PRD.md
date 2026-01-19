@@ -152,19 +152,25 @@
 | `max_selection` | int | 最大选号数量 |
 | `allow_multiple_bet` | bool | 是否支持拆单 |
 
-### 6.4 💰 赔率配置模块 (OddsProfile)
+### 6.4 💰 赔率配置模块 (OddsProfile) ✅
 
-* **功能**：定义收益模型，支持版本控制。**不支持浮动赔率**。
+* **功能**：定义玩法对应的收益模型，支持版本控制。**仅支持固定赔率**。
+* **主要特性**：
+    * **玩法映射**：支持 特码号码、波色、生肖、单双、大小 等基础玩法。
+    * **版本管理**：支持多版本并存，记录生效时间区间。
+    * **灵活性**：支持配置基础赔率、返水比例、单注收益封顶。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `id` | int | 唯一标识 |
-| `play_type_id` | int | 对应玩法 ID |
+| `id` | string | 唯一标识 (UUID) |
+| `name` | string | 配置名称 |
+| `play_type` | string | 玩法类型 (special_number/color/zodiac/...) |
 | `odds` | float | 固定赔率 |
-| `rebate` | float | 返水（可选） |
+| `rebate` | float | 返水比例 |
 | `max_payout` | float | 封顶收益 |
 | `version` | string | 赔率版本号 |
 | `valid_from/to` | date | 生效时间区间 |
+| `create_time` | int | 创建时间戳 |
 
 ### 6.5 🚥 下注触发条件模块 (Entry Rule)
 
@@ -285,8 +291,10 @@
 
 * `HistoricalRecord`: { `period`, `date`, `n1`~`n6`, `special`, `*_zodiac`, `*_color`, `*_odd` }
 * `StatisticsCache` (period, type, dimension, value, omission_count, frequency)
-* `EntryRule` (id, rules, operator)
-* `Strategy` (id, entry_rule_id, bet_rule_id)
+* `EntryRule` (id, name, description, conditions, logicOperator)
+* `MoneyRule` (id, name, mode, params)
+* `OddsProfile` (id, name, playType, odds, rebate, maxPayout, version, validFrom, validTo)
+* `Strategy` (id, name, entryRuleId, moneyRuleId, oddsProfileId)
 * `BacktestTask` (id, strategy_id, odds_id, bankroll, status)
 * `BacktestEvent` (task_id, period, bet, profit, hit)
 
@@ -296,9 +304,9 @@
 
 1. 历史数据管理（支持 Excel 多表导入，自动补全 `year` 字段）
 2. **历史开奖统计分析（遗漏、冷热榜单）**
-3. 玩法 & 赔率配置
+3. **玩法 & 赔率配置 (支持多版本 CRUD)**
 4. 下注触发条件 & 资金管理
-5. 核心回测引擎
+5. 核心回测引擎 (支持动态赔率计算)
 6. **可视化手动回放（支持策略条件穿透分析、数据源动态切换）**
 7. 年份生肖规则映射
 8. 时间正序回测逻辑（Oldest -> Newest）
