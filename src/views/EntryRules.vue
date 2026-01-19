@@ -86,6 +86,7 @@
                 <el-option label="五行 (Wuxing)" value="wuxing" />
                 <el-option label="大小 (Size)" value="size" />
                 <el-option label="单双 (Parity)" value="parity" />
+                <el-option label="尾数 (Tail)" value="tail" />
               </el-select>
             </el-col>
              <el-col :span="6" v-if="cond.type === 'window_stat'">
@@ -111,7 +112,16 @@
                  <el-option label="大" value="big" />
                  <el-option label="小" value="small" />
               </el-select>
-              <el-input v-else v-model="cond.value" placeholder="值 (例如: 10, 鼠)" size="small" />
+              <el-select v-else-if="cond.dimension === 'wuxing'" v-model="cond.value" placeholder="选择五行" size="small">
+                 <el-option v-for="w in ['金', '木', '水', '火', '土']" :key="w" :label="w" :value="w" />
+              </el-select>
+              <el-select v-else-if="cond.dimension === 'zodiac'" v-model="cond.value" placeholder="选择生肖" size="small">
+                 <el-option v-for="z in ['鼠','牛','虎','兔','龙','蛇','马','羊','猴','鸡','狗','猪']" :key="z" :label="z" :value="z" />
+              </el-select>
+              <el-select v-else-if="cond.dimension === 'tail'" v-model="cond.value" placeholder="选择尾数" size="small">
+                 <el-option v-for="t in 10" :key="t-1" :label="(t-1)+'尾'" :value="String(t-1)" />
+              </el-select>
+              <el-input v-else v-model="cond.value" placeholder="值 (例如: 10)" size="small" />
              </el-col>
 
             <el-col :span="6">
@@ -242,7 +252,12 @@ const formatCondition = (cond: Condition) => {
   if (cond.type === 'window_stat') {
     text += `[${cond.window}期]`;
   }
-  text += ` ${cond.operator} ${cond.threshold}`;
+  // 如果值是特殊英文，转换显示? 也可以直接显示value
+  // 这里做一个简单的映射，提升可读性
+  const map: any = { red:'红波', blue:'蓝波', green:'绿波', big:'大', small:'小', odd:'单', even:'双' };
+  const displayVal = map[String(cond.value)] || cond.value;
+  
+  text += ` ${cond.operator} ${displayVal} (Th: ${cond.threshold})`;
   return text;
 };
 </script>

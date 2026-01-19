@@ -212,12 +212,33 @@
           <el-row :gutter="20">
             <el-col :span="12">
                <h3>当前遗漏 (Omission)</h3>
-               <el-descriptions :column="2" border>
-                 <el-descriptions-item label="红波遗漏">{{ currentState.stats.omission.color_0 }}</el-descriptions-item>
-                 <el-descriptions-item label="蓝波遗漏">{{ currentState.stats.omission.color_1 }}</el-descriptions-item>
-                 <el-descriptions-item label="绿波遗漏">{{ currentState.stats.omission.color_2 }}</el-descriptions-item>
+               <el-descriptions :column="2" border size="small">
+                 <el-descriptions-item label="红波">{{ currentState.stats.omission.color_0 }}</el-descriptions-item>
+                 <el-descriptions-item label="蓝波">{{ currentState.stats.omission.color_1 }}</el-descriptions-item>
+                 <el-descriptions-item label="绿波">{{ currentState.stats.omission.color_2 }}</el-descriptions-item>
                </el-descriptions>
                
+               <div style="margin-top: 10px;">
+                 <el-descriptions :column="2" border size="small">
+                   <el-descriptions-item label="大">{{ currentState.stats.omission.size_1 }}</el-descriptions-item>
+                   <el-descriptions-item label="小">{{ currentState.stats.omission.size_0 }}</el-descriptions-item>
+                   <el-descriptions-item label="单">{{ currentState.stats.omission.parity_1 }}</el-descriptions-item>
+                   <el-descriptions-item label="双">{{ currentState.stats.omission.parity_0 }}</el-descriptions-item>
+                 </el-descriptions>
+               </div>
+               
+               <div style="margin-top: 10px;">
+                 <strong>特码尾数遗漏:</strong>
+                 <div class="zodiac-grid" style="grid-template-columns: repeat(5, 1fr);">
+                   <div v-for="t in 10" :key="t-1" class="stat-item">
+                     <span class="label">{{ t-1 }}尾</span>
+                     <span class="value" :class="{ high: currentState.stats.omission['tail_'+(t-1)] > 10 }">
+                       {{ currentState.stats.omission['tail_'+(t-1)] }}
+                     </span>
+                   </div>
+                 </div>
+               </div>
+
                <div style="margin-top: 10px;">
                  <strong>生肖遗漏:</strong>
                  <div class="zodiac-grid">
@@ -232,11 +253,44 @@
             </el-col>
             <el-col :span="12">
                <h3>近期热度 (Frequency 100)</h3>
-               <el-descriptions :column="2" border>
-                 <el-descriptions-item label="红波热度">{{ currentState.stats.freq_100.color_0 }}</el-descriptions-item>
-                 <el-descriptions-item label="蓝波热度">{{ currentState.stats.freq_100.color_1 }}</el-descriptions-item>
-                 <el-descriptions-item label="绿波热度">{{ currentState.stats.freq_100.color_2 }}</el-descriptions-item>
+               <el-descriptions :column="2" border size="small">
+                 <el-descriptions-item label="红波">{{ currentState.stats.freq_100.color_0 }}</el-descriptions-item>
+                 <el-descriptions-item label="蓝波">{{ currentState.stats.freq_100.color_1 }}</el-descriptions-item>
+                 <el-descriptions-item label="绿波">{{ currentState.stats.freq_100.color_2 }}</el-descriptions-item>
                </el-descriptions>
+               
+               <div style="margin-top: 10px;">
+                 <el-descriptions :column="2" border size="small">
+                   <el-descriptions-item label="大">{{ currentState.stats.freq_100.size_1 }}</el-descriptions-item>
+                   <el-descriptions-item label="小">{{ currentState.stats.freq_100.size_0 }}</el-descriptions-item>
+                   <el-descriptions-item label="单">{{ currentState.stats.freq_100.parity_1 }}</el-descriptions-item>
+                   <el-descriptions-item label="双">{{ currentState.stats.freq_100.parity_0 }}</el-descriptions-item>
+                 </el-descriptions>
+               </div>
+               
+               <div style="margin-top: 10px;">
+                 <strong>特码尾数热度:</strong>
+                 <div class="zodiac-grid" style="grid-template-columns: repeat(5, 1fr);">
+                   <div v-for="t in 10" :key="t-1" class="stat-item">
+                     <span class="label">{{ t-1 }}尾</span>
+                     <span class="value" :class="{ high: currentState.stats.freq_100['tail_'+(t-1)] > 15 }">
+                       {{ currentState.stats.freq_100['tail_'+(t-1)] }}
+                     </span>
+                   </div>
+                 </div>
+               </div>
+
+               <div style="margin-top: 10px;">
+                 <strong>生肖热度:</strong>
+                 <div class="zodiac-grid">
+                   <div v-for="z in 12" :key="z-1" class="stat-item">
+                     <span class="label">{{ getZodiacName(z-1) }}</span>
+                     <span class="value" :class="{ high: currentState.stats.freq_100['zodiac_'+(z-1)] > 12 }">
+                       {{ currentState.stats.freq_100['zodiac_'+(z-1)] }}
+                     </span>
+                   </div>
+                 </div>
+               </div>
             </el-col>
           </el-row>
         </div>
