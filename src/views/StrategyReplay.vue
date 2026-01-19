@@ -45,6 +45,7 @@
                  {{ isPlaying ? '暂停' : '自动回放' }}
                </el-button>
                <el-button icon="ArrowRight" @click="nextPeriod" :disabled="loading">下一期 (Next)</el-button>
+               <el-button icon="List" @click="showHistory = true">历史订单</el-button>
              </el-button-group>
              <el-select v-model="playSpeed" style="width: 100px; margin-left: 10px;">
                <el-option label="1.0s" :value="1000" />
@@ -298,6 +299,28 @@
         <el-empty v-else description="请点击下一期开始回放" />
       </div>
     </el-card>
+
+    <el-drawer v-model="showHistory" title="历史订单记录 (Recent 100)" size="40%">
+      <el-table :data="currentState?.history_orders || []" style="width: 100%" stripe border height="calc(100vh - 100px)">
+        <el-table-column prop="period" label="期数" width="100" />
+        <el-table-column prop="target" label="下注目标" width="120" />
+        <el-table-column prop="amount" label="金额" width="100" />
+        <el-table-column label="结果" align="center">
+          <template #default="scope">
+            <el-tag :type="scope.row.is_hit ? 'success' : 'danger'">
+              {{ scope.row.is_hit ? '赢' : '输' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="盈亏" align="right">
+          <template #default="scope">
+             <span :style="{ color: scope.row.profit > 0 ? 'green' : 'red', fontWeight: 'bold' }">
+               {{ scope.row.profit > 0 ? '+' : '' }}{{ scope.row.profit }}
+             </span>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-drawer>
   </div>
 </template>
 
@@ -355,6 +378,7 @@ interface ReplayState {
     signal_evaluation?: SignalEvaluation;
     accumulated_stats?: AccumulatedStats;
     betting_status?: BettingStatus;
+    history_orders?: any[];
 }
 
 const strategiesStore = useStrategiesStore();
@@ -368,6 +392,7 @@ const currentPeriod = ref(2023000);
 const isPlaying = ref(false);
 const playSpeed = ref(1000);
 const selectedStrategyId = ref('');
+const showHistory = ref(false);
 let timer: any = null;
 
 const ZODIAC_NAMES = ['鼠', '牛', '虎', '兔', '龙', '蛇', '马', '羊', '猴', '鸡', '狗', '猪'];
@@ -404,6 +429,7 @@ const fetchState = async (period: string | number) => {
     const res = await callPython('get_replay_state', params);
     if (res && res.status === 'ok') {
       currentState.value = res.data;
+      console.log("Current State:", currentState.value); // DEBUG
       currentPeriod.value = parseInt(res.data.period);
     } else {
       console.error(res);

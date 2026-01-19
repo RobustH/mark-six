@@ -459,6 +459,10 @@ class NumpyEncoder(json.JSONEncoder):
         "triggered": true,
         "conditions": [
             { "desc": "color omission", "actual": 6, "threshold": 5, "operator": ">=", "passed": true }
+        ],
+        "history_orders": [
+            { "period": "2026004", "target": "color:0", "amount": 10, "is_hit": true, "profit": 18.0 },
+            ...
         ]
     }
   }
