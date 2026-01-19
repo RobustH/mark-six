@@ -215,8 +215,9 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 // Initialize Python process
                 let data_dir = data_manager::get_project_data_dir().unwrap_or(PathBuf::from("."));
-                // Assuming standard project structure: root/app/data -> root/python/main.py
-                let project_root = data_dir.parent().and_then(|p| p.parent()).unwrap_or(std::path::Path::new(".."));
+                // Assuming standard project structure: root/app/data (data_dir) -> root/python/main.py
+                // So project_root is the parent of data_dir
+                let project_root = data_dir.parent().unwrap_or(std::path::Path::new(".."));
                 let script_path = project_root.join("python").join("main.py");
                 
                 println!("Attempting to start Python at: {:?}", script_path);
@@ -280,10 +281,12 @@ pub fn run() {
             data_manager::import_excel,
             data_manager::get_historical_data,
             data_manager::get_historical_years,
+            data_manager::get_statistics,
             run_backtest_simulation,
             load_data_source,
             get_replay_state,
-            get_data_stats
+            get_data_stats,
+            data_manager::fetch_historical_data
         ])
         .run(tauri::generate_context!())
         .expect("运行 tauri 应用时出错");
