@@ -19,8 +19,26 @@
                 :value="s.id"
               />
             </el-select>
+            <el-date-picker
+              v-model="dateRange"
+              type="daterange"
+              range-separator="至"
+              start-placeholder="开始日期"
+              end-placeholder="结束日期"
+              value-format="YYYY-MM-DD"
+              @change="handleDateRangeChange"
+              style="margin-left: 15px; width: 300px;"
+            />
           </div>
-          <div class="controls">
+          <div class="control-group">
+           <span class="label">数据源:</span>
+           <el-select v-model="selectedDataSource" placeholder="选择数据年份" style="width: 150px" @change="handleDataSourceChange">
+             <el-option label="全部历史" value="all" />
+             <el-option v-for="year in availableYears" :key="year" :label="year + '年'" :value="year" />
+           </el-select>
+        </div>
+        
+        <div class="control-group">
              <el-button-group>
                <el-button icon="ArrowLeft" @click="prevPeriod" :disabled="loading">上一期</el-button>
                <el-button type="primary" :icon="isPlaying ? 'VideoPause' : 'VideoPlay'" @click="togglePlay">
@@ -48,6 +66,48 @@
              :closable="false"
            />
         </div>
+
+        <!-- Strategy Execution Details -->
+        <el-card v-if="currentStrategyConfig && currentState && currentState.signal_evaluation" class="strategy-details-card">
+            <template #header>
+                <div class="card-header">
+                    <span>策略执行详情 (Strategy Execution)</span>
+                </div>
+            </template>
+            
+            <div class="strategy-section">
+                <h4>1. 入场条件评估</h4>
+                <div v-for="(cond, idx) in currentState.signal_evaluation.conditions" :key="idx" class="condition-item">
+                    <el-tag :type="cond.passed ? 'success' : 'danger'" size="small">
+                        {{ cond.passed ? '通过' : '未通过' }}
+                    </el-tag>
+                    <span class="cond-desc">{{ cond.desc }}</span>
+                    <span class="cond-val">
+                        (期望 {{ cond.operator }} {{ cond.threshold }}, 实际: {{ cond.actual }})
+                    </span>
+                </div>
+                <div class="signal-summary">
+                    <strong>最终判定: </strong>
+                    <el-tag :type="currentState.signal_evaluation.triggered ? 'success' : 'info'">
+                        {{ currentState.signal_evaluation.triggered ? '触发信号' : '未触发' }}
+                    </el-tag>
+                </div>
+            </div>
+
+            <div class="strategy-section" v-if="currentState.signal">
+                <h4>2. 当前下注状态</h4>
+                <el-descriptions :column="2" border size="small">
+                    <el-descriptions-item label="下注目标">{{ currentState.signal.target }}</el-descriptions-item>
+                    <el-descriptions-item label="下注结果">
+                        <span :style="{ color: currentState.signal.is_hit ? 'green' : 'red', fontWeight: 'bold' }">
+                            {{ currentState.signal.is_hit ? '赢 (Win)' : '输 (Loss)' }}
+                        </span>
+                    </el-descriptions-item>
+                </el-descriptions>
+            </div>
+        </el-card>
+
+        <el-divider />
 
         <!-- Current Period Info -->
         <div v-if="currentState" class="period-info">
@@ -178,8 +238,16 @@ const fetchState = async (period: string | number) => {
   }
 };
 
+
+
 const allPeriods = ref<string[]>([]);
+const allDates = ref<string[]>([]);
+const activePeriods = ref<string[]>([]);
+const dateRange = ref<any>(null);
 const currentIndex = ref(-1);
+
+const selectedDataSource = ref('all');
+const availableYears = ref<string[]>([]);
 
 const initData = async () => {
     loading.value = true;
@@ -190,13 +258,30 @@ const initData = async () => {
             moneyRulesStore.init()
         ]);
         
-        // 使用 callPython
+        // 0. 加载可用年份
+        try {
+            const years: string[] = await invoke('get_historical_years');
+            availableYears.value = years;
+        } catch(e) { console.error("加载年份失败", e); }
+
+        // 1. 先加载数据 (让后端自动寻找 all.feather)
+        await callPython('load_data', { file_path: "" });
+
+        // 2. 获取数据统计
         const res = await callPython('get_data_stats');
         if (res.status === 'ok' && res.data && res.data.count > 0) {
             allPeriods.value = res.data.periods;
-            if (currentIndex.value === -1) {
-                currentIndex.value = 0;
-                fetchState(allPeriods.value[0]);
+            allDates.value = res.data.dates || [];
+            activePeriods.value = [...allPeriods.value];
+            
+            if (activePeriods.value.length > 0) {
+                 currentIndex.value = 0;
+                 fetchState(activePeriods.value[0]);
+                 
+                 // 设置默认时间范围 (最近一年?) 或者不设置显示全部
+                 // if (allDates.value.length > 0) {
+                 //    dateRange.value = [allDates.value[allDates.value.length-1], allDates.value[0]].sort();
+                 // }
             }
         }
     } catch (e: any) {
@@ -207,16 +292,68 @@ const initData = async () => {
     }
 };
 
+const handleDataSourceChange = async () => {
+    loading.value = true;
+    try {
+        // 重置状态
+        currentIndex.value = -1;
+        currentState.value = null;
+        dateRange.value = null;
+        
+        // 加载新数据源
+        await callPython('load_data', { file_path: selectedDataSource.value });
+        
+        // 刷新统计
+        const res = await callPython('get_data_stats');
+        if (res.status === 'ok' && res.data) {
+            allPeriods.value = res.data.periods || [];
+            allDates.value = res.data.dates || [];
+            activePeriods.value = [...allPeriods.value];
+            
+            if (activePeriods.value.length > 0) {
+                 currentIndex.value = 0;
+                 fetchState(activePeriods.value[0]);
+            }
+            ElMessage.success("数据源切换成功");
+        }
+    } catch (e: any) {
+        ElMessage.error("切换数据源失败: " + e.message);
+    } finally {
+        loading.value = false;
+    }
+};
+
+const handleDateRangeChange = () => {
+    if (!dateRange.value) {
+        activePeriods.value = [...allPeriods.value];
+    } else {
+        const [start, end] = dateRange.value;
+        activePeriods.value = allPeriods.value.filter((_, i) => {
+            const date = allDates.value[i];
+            return date >= start && date <= end;
+        });
+    }
+    
+    if (activePeriods.value.length > 0) {
+        currentIndex.value = 0; // 重置到筛选后的第一期
+        fetchState(activePeriods.value[0]);
+    } else {
+        currentIndex.value = -1;
+        currentState.value = null;
+        ElMessage.warning("该时间段内无数据");
+    }
+};
+
 const handleStrategyChange = () => {
-    if (currentIndex.value !== -1) {
-        fetchState(allPeriods.value[currentIndex.value]);
+    if (currentIndex.value !== -1 && activePeriods.value.length > 0) {
+        fetchState(activePeriods.value[currentIndex.value]);
     }
 };
 
 const nextPeriod = () => {
-  if (currentIndex.value < allPeriods.value.length - 1) {
+  if (currentIndex.value < activePeriods.value.length - 1) {
       currentIndex.value++;
-      fetchState(allPeriods.value[currentIndex.value]);
+      fetchState(activePeriods.value[currentIndex.value]);
   } else {
       ElMessage.info("已是最后一期");
       if (isPlaying.value) togglePlay();
@@ -226,7 +363,7 @@ const nextPeriod = () => {
 const prevPeriod = () => {
   if (currentIndex.value > 0) {
       currentIndex.value--;
-      fetchState(allPeriods.value[currentIndex.value]);
+      fetchState(activePeriods.value[currentIndex.value]);
   } else {
       ElMessage.info("已是第一期");
   }
@@ -239,7 +376,7 @@ onMounted(() => {
 const togglePlay = () => {
   isPlaying.value = !isPlaying.value;
   if (isPlaying.value) {
-    if (currentIndex.value >= allPeriods.value.length - 1) {
+    if (currentIndex.value >= activePeriods.value.length - 1) {
         // Restart if at end?
         currentIndex.value = 0; // or just stop? Let's restart or continue
     }

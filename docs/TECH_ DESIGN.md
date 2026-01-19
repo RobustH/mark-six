@@ -22,8 +22,8 @@ Architecture: Hybrid Rust/Python local desktop app
 # 📘 Tech Design Document: Mark Six Quant Platform (v2.4)
 
 > **Project**: Mark Six Backtest Platform  
-> **Version**: v2.4 (Aligned with PRD v2.3)  
-> **Last Updated**: 2026-01-16  
+> **Version**: v2.5 (Manual Replay & Visualization Optimized)  
+> **Last Updated**: 2026-01-19  
 
 ---
 
@@ -43,14 +43,15 @@ Architecture: Hybrid Rust/Python local desktop app
 应用采用 **UI 与计算分离** 的架构：
 
 - **Rust (Tauri Main Process)**:
-  - 负责窗口管理、文件系统读写权限控制
-  - 作为 Python 进程的守护者（Spawner）
-  - 处理 IPC 转发（JSON via stdin/stdout）
+  - 负责窗口管理、文件系统读写权限控制。
+  - 使用 `std::process::Command` 手动启动 Python 子进程，并持有 `stdin` (ChildStdin)。
+  - **通信分发**：多线程异步处理 Python 的 `stdout` 并通过 `emit` 转发至前端；处理 `stderr` 进行错误日志埋点。
+  - **路径自动解析**：在加载数据源时，自动完成简化名称（如 "2024"）到物理文件路径的映射。
 
 - **Python (Subprocess)**:
-  - 无状态计算服务
-  - 不访问 UI，仅通过 `stdin/stdout` 接收指令、返回结果
-  - 执行数据加载、统计计算、回测模拟等核心逻辑
+  - 核心计算服务，保持 `BacktestSystem` 实例的长连接。
+  - **时间正序加载**：在 `__init__` 中对数据进行 `sort_values(by='date')`，确保所有回放和回测逻辑符合时间因果律。
+  - 响应前端指令，提供状态查询、全量回测及详细信号评估。
 
 > **Why?** Pandas 的向量化能力无法被 JS 替代；Python 生态拥有最完善的量化/统计库。
 
@@ -398,36 +399,36 @@ def run_backtest(strategy, df, odds_profile):
 
 ---
 
-### 4.3 Command: `get_replay_state`
-
-> 用于手动回放模式，获取指定期数的完整状态。
-
-**Request**: `{ "cmd": "get_replay_state", "params": { "period": "2026005" } }`
+**Request**: `{ "cmd": "get_replay_state", "params": { "period": "2026005", "strategy_config": {...} } }`
 **Response**:
 ```json
 {
   "status": "ok",
   "data": {
     "period": "2026005",
-    "result": { "special": 27, "n1": 38, "color": 2, "zodiac": 4, "date": "2026-01-13" },
-    "stats": {
-      "omission": { "color_0": 2, "zodiac_4": 0 },
-      "freq_100": { "color_0": 2 }
+    "result": { "special": 27, "n1": 38, ... },
+    "stats": { "omission": {...}, "freq_100": {...} },
+    "signal": { "triggered": true, "target": "color: red", "is_hit": true },
+    "signal_evaluation": {
+        "triggered": true,
+        "conditions": [
+            { "desc": "color omission", "actual": 6, "threshold": 5, "operator": ">=", "passed": true }
+        ]
     }
   }
 }
 ```
 
-### 4.4 Command: `load_data_source`
+### 4.4 Command: `load_data` (Data Source Selection)
 
-> 动态切换 Python 引擎加载的 Feather 文件。
+> 动态切换 Python 引擎加载的 Feather 文件。支持自动补全 `history/` 路径。
 
-**Request**: `{ "cmd": "load_data", "params": { "file_path": "F:/data/2026.feather" } }`
-**Response**: `{ "status": "ok", "message": "Data loaded successfully" }`
+**Request**: `{ "cmd": "load_data", "params": { "file_path": "2024" } }` 
+*(Rust 自动解析为 project_root/data/history/2024.feather)*
 
 ### 4.5 Command: `get_data_stats`
 
-> 获取当前数据集的元数据（起止期号、总记录数）。
+> 获取当前数据集的元数据，用于前端范围控制。
 
 **Request**: `{ "cmd": "get_data_stats" }`
 **Response**: 
@@ -438,7 +439,8 @@ def run_backtest(strategy, df, odds_profile):
     "count": 150,
     "min_period": "2026001",
     "max_period": "2026150",
-    "periods": ["2026001", "2026002", ...]
+    "periods": ["2026001", ...],
+    "dates": ["2024-01-01", ...] // 用于前端日期筛选
   }
 }
 ```
@@ -483,17 +485,19 @@ def run_backtest(strategy, df, odds_profile):
    - Tauri 侧测试 Sidecar 调用
 
 4. **Step 3: UI - Data & Stats**
-   - 完成数据导入页面
-   - 实现冷热号/遗漏榜单（支持排序）
+   - [x] 完成数据导入页面
+   - [ ] 实现冷热号/遗漏榜单（支持排序）
 
-5. **Step 4: Backtest Engine**
-   - 实现 Shift 逻辑 + 资金循环
-   - 支持时间切片赔率
-   - 集成风控提示（爆仓检测）
+5. **Step 4: Replay & Visualization** [IN PROGRESS]
+   - [x] 手动回放基础逻辑 (Prev/Next)
+   - [x] 核心计算引擎 (Python Sidecar)
+   - [x] **策略信号穿透分析 (Visualized Evaluation)**
+   - [x] **数据源动态切换逻辑**
 
-6. **Step 5: Visualization & Risk Control**
-   - 对接 ECharts（资金曲线）
-   - 实现 MDD / Ruin Probability 计算
-   - 添加 ⚠️ 风险警告 UI
+6. **Step 5: Full Backtest Engine**
+   - [ ] 实现全量数据向量化回测
+   - [ ] 对接 ECharts（资金曲线）
+   - [ ] 实现 MDD / Ruin Probability 计算
+   - [ ] 添加 ⚠️ 风险警告 UI
 
 ---

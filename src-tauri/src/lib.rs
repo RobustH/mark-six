@@ -1,12 +1,17 @@
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use serde_json::Value;
-use tauri_plugin_shell::process::CommandChild;
+use std::path::PathBuf;
+use tauri::Manager;
+use tauri::Emitter;
 
 mod data_manager;
 
+use std::process::{Command, Stdio, ChildStdin};
+use std::io::Write;
+
 pub struct PythonState {
-    pub stdin: Option<CommandChild>,
+    pub stdin: Option<ChildStdin>,
 }
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -21,7 +26,7 @@ async fn run_backtest_simulation(
         return Err("Python 引擎未运行".to_string());
     }
 
-    let child = state.stdin.as_mut().unwrap();
+    let child_stdin = state.stdin.as_mut().unwrap();
     let req_id = payload.get("request_id").cloned();
     
     let cmd = serde_json::json!({
@@ -31,7 +36,7 @@ async fn run_backtest_simulation(
     });
 
     let cmd_str = cmd.to_string() + "\n";
-    child.write(cmd_str.as_bytes()).map_err(|e: tauri_plugin_shell::Error| e.to_string())?;
+    child_stdin.write_all(cmd_str.as_bytes()).map_err(|e| e.to_string())?;
 
     Ok(serde_json::json!({ "status": "sent" }))
 }
@@ -42,17 +47,37 @@ async fn load_data_source(
     payload: Value,
 ) -> Result<Value, String> {
     let mut state = state.lock().await;
-    if let Some(child) = state.stdin.as_mut() {
+    if let Some(child_stdin) = state.stdin.as_mut() {
         let req_id = payload.get("request_id").cloned();
         let file_path = payload.get("file_path").and_then(|v: &Value| v.as_str()).unwrap_or("");
         
+        // Auto-resolve path if empty or year provided
+        let data_dir = data_manager::get_project_data_dir().map_err(|e| e.to_string())?;
+        let final_path = if file_path.is_empty() || file_path == "all" {
+             let p = data_dir.join("history").join("all.feather");
+             if p.exists() {
+                 p.to_string_lossy().to_string()
+             } else {
+                 data_dir.join("history.feather").to_string_lossy().to_string()
+             }
+        } else {
+             // Check if it's a specific year (e.g. "2024")
+             let year_path = data_dir.join("history").join(format!("{}.feather", file_path));
+             if year_path.exists() {
+                 year_path.to_string_lossy().to_string()
+             } else {
+                 // Assume it's a full path
+                 file_path.to_string()
+             }
+        };
+
         let cmd = serde_json::json!({
             "cmd": "load_data",
-            "params": { "file_path": file_path },
+            "params": { "file_path": final_path },
             "request_id": req_id
         });
         let cmd_str = cmd.to_string() + "\n";
-        child.write(cmd_str.as_bytes()).map_err(|e: tauri_plugin_shell::Error| e.to_string())?;
+        child_stdin.write_all(cmd_str.as_bytes()).map_err(|e| e.to_string())?;
         Ok(serde_json::json!({ "status": "sent" }))
     } else {
         Err("Python 引擎未就绪".into())
@@ -65,7 +90,7 @@ async fn get_replay_state(
     payload: Value,
 ) -> Result<Value, String> {
     let mut state = state.lock().await;
-    if let Some(child) = state.stdin.as_mut() {
+    if let Some(child_stdin) = state.stdin.as_mut() {
         let req_id = payload.get("request_id").cloned();
         let period = payload.get("period").and_then(|v: &Value| v.as_str()).unwrap_or("");
         let strategy_config = payload.get("strategy_config").cloned();
@@ -79,7 +104,7 @@ async fn get_replay_state(
             "request_id": req_id
         });
         let cmd_str = cmd.to_string() + "\n";
-        child.write(cmd_str.as_bytes()).map_err(|e: tauri_plugin_shell::Error| e.to_string())?;
+        child_stdin.write_all(cmd_str.as_bytes()).map_err(|e| e.to_string())?;
         Ok(serde_json::json!({ "status": "sent" }))
     } else {
         Err("Python 引擎未就绪".into())
@@ -92,14 +117,14 @@ async fn get_data_stats(
     payload: Value,
 ) -> Result<Value, String> {
     let mut state = state.lock().await;
-    if let Some(child) = state.stdin.as_mut() {
+    if let Some(child_stdin) = state.stdin.as_mut() {
         let req_id = payload.get("request_id").cloned();
         let cmd = serde_json::json!({
             "cmd": "get_data_stats",
             "request_id": req_id
         });
         let cmd_str = cmd.to_string() + "\n";
-        child.write(cmd_str.as_bytes()).map_err(|e: tauri_plugin_shell::Error| e.to_string())?;
+        child_stdin.write_all(cmd_str.as_bytes()).map_err(|e| e.to_string())?;
         Ok(serde_json::json!({ "status": "sent" }))
     } else {
         Err("Python 引擎未就绪".into())
@@ -160,7 +185,72 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            let app_handle = app.handle().clone();
+            
+            tauri::async_runtime::spawn(async move {
+                // Initialize Python process
+                let data_dir = data_manager::get_project_data_dir().unwrap_or(PathBuf::from("."));
+                // Assuming standard project structure: root/app/data -> root/python/main.py
+                let project_root = data_dir.parent().and_then(|p| p.parent()).unwrap_or(std::path::Path::new(".."));
+                let script_path = project_root.join("python").join("main.py");
+                
+                println!("Attempting to start Python at: {:?}", script_path);
+
+                match Command::new("python")
+                    .arg(script_path)
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .spawn() 
+                {
+                    Ok(mut child) => {
+                        println!("Python engine started successfully.");
+                        
+                        let stdin = child.stdin.take();
+                        let stdout = child.stdout.take();
+                        let stderr = child.stderr.take();
+                        
+                        // Store stdin in state
+                        let state = app_handle.state::<Arc<Mutex<PythonState>>>();
+                        let mut state_guard = state.lock().await;
+                        state_guard.stdin = stdin;
+                        
+                        // Handle stdout
+                        if let Some(out) = stdout {
+                            let app_handle_clone = app_handle.clone();
+                            std::thread::spawn(move || {
+                                use std::io::{BufRead, BufReader};
+                                let reader = BufReader::new(out);
+                                for line in reader.lines() {
+                                    if let Ok(l) = line {
+                                        // Emit event to frontend
+                                        let _ = app_handle_clone.emit("python-response", l);
+                                    }
+                                }
+                            });
+                        }
+                        
+                         // Handle stderr
+                        if let Some(err) = stderr {
+                            std::thread::spawn(move || {
+                                use std::io::{BufRead, BufReader};
+                                let reader = BufReader::new(err);
+                                for line in reader.lines() {
+                                    if let Ok(l) = line {
+                                        eprintln!("PYTHON STDERR: {}", l);
+                                    }
+                                }
+                            });
+                        }
+                    }
+                    Err(e) => {
+                         eprintln!("Failed to start Python engine: {}", e);
+                    }
+                }
+            });
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             greet,
             data_manager::import_excel,

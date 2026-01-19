@@ -35,7 +35,7 @@ fn is_odd(num: i32) -> bool {
     num % 2 == 1
 }
 
-fn get_project_data_dir() -> Result<PathBuf, String> {
+pub fn get_project_data_dir() -> Result<PathBuf, String> {
     let exe_path = std::env::current_exe().map_err(|e| e.to_string())?;
     let exe_dir = exe_path.parent().ok_or("无法获取可执行文件目录")?;
     
@@ -115,8 +115,8 @@ pub async fn import_excel(_app_handle: tauri::AppHandle, file_path: String) -> R
     let mut years_imported = Vec::new();
 
     for (year, mut records) in year_records {
-        // Sort records by date descending
-        records.sort_by(|a, b| b.date.cmp(&a.date));
+        // Sort records by date ascending
+        records.sort_by(|a, b| a.date.cmp(&b.date));
         
         let periods: Vec<String> = records.iter().map(|r| r.period.clone()).collect();
         let dates: Vec<String> = records.iter().map(|r| r.date.clone()).collect();
@@ -157,7 +157,8 @@ pub async fn import_excel(_app_handle: tauri::AppHandle, file_path: String) -> R
 
         let mut df = df!(
             "period" => periods,
-            "date" => dates,
+            "date" => dates.clone(),
+            "year" => dates.iter().map(|d| d.split('-').next().unwrap_or("").to_string()).collect::<Vec<String>>(),
             "n1" => n1,
             "n1_zodiac" => n1_zodiac,
             "n1_color" => n1_color,
@@ -211,7 +212,7 @@ pub async fn import_excel(_app_handle: tauri::AppHandle, file_path: String) -> R
         
         // 去重并按日期降序排序
         combined_df = combined_df.unique_stable(None, UniqueKeepStrategy::First, None).map_err(|e| e.to_string())?;
-        combined_df = combined_df.sort(["date"], SortMultipleOptions::default().with_order_descending(true)).map_err(|e| e.to_string())?;
+        combined_df = combined_df.sort(["date"], SortMultipleOptions::default().with_order_descending(false)).map_err(|e| e.to_string())?;
         
         let all_feather_path = history_dir.join("all.feather");
         let file = std::fs::File::create(&all_feather_path).map_err(|e| e.to_string())?;
@@ -220,7 +221,7 @@ pub async fn import_excel(_app_handle: tauri::AppHandle, file_path: String) -> R
 
     let year_names: Vec<String> = years_imported.iter().map(|(y, _)| y.clone()).collect();
     let mut sorted_years = year_names.clone();
-    sorted_years.sort_by(|a, b| b.cmp(a));
+    sorted_years.sort_by(|a, b| a.cmp(b));
     Ok(format!("成功从所有子表中导入 {} 条记录，包含年份: {}", total_records, sorted_years.join(", ")))
 }
 
@@ -245,7 +246,7 @@ pub async fn get_historical_years(_app_handle: tauri::AppHandle) -> Result<Vec<S
         }
     }
 
-    years.sort_by(|a, b| b.cmp(a));
+    years.sort_by(|a, b| a.cmp(b));
     Ok(years)
 }
 
@@ -304,7 +305,7 @@ pub async fn get_historical_data(_app_handle: tauri::AppHandle, year: Option<Str
     };
 
     combined_df = combined_df.unique_stable(None, UniqueKeepStrategy::First, None).map_err(|e| e.to_string())?;
-    combined_df = combined_df.sort(["date"], SortMultipleOptions::default().with_order_descending(true)).map_err(|e| e.to_string())?;
+    combined_df = combined_df.sort(["date"], SortMultipleOptions::default().with_order_descending(false)).map_err(|e| e.to_string())?;
 
     dataframe_to_json(&mut combined_df)
 }
