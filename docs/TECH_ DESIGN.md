@@ -331,40 +331,32 @@ def run_backtest(strategy_config, df):
     money_mgr = MoneyManager(strategy.bet_sizing)
     
     for idx, row in backtest_df.iterrows():
-        # 决策：基于 T-1 期状态
-        should_bet = evaluate_entry_rule(row, strategy.entry_rule)
-        if not should_bet:
-            records.append({...})
-            continue
-            
-        bet_amount = money_mgr.get_next_bet()
+        # 1. 结算 (Settlement): 如果上一期有下注，则在本期 (row) 进行结果对碰
+        if current_bet:
+            hit = check_hit(row, current_bet)
+            profit = (...) if hit else (...)
+            wallet += profit
+            # 更新资金管理状态...
         
-        # 赔率优先级：前端配置 > 系统默认
-        target_odds = self._get_odds(row['target_dim'], odds_config)
-        
-        # 结算：使用 T 期真实开奖
-        hit = check_hit(row, strategy.play_type)
-        profit = (bet_amount * target_odds - bet_amount) if hit else -bet_amount
-        
-        wallet += profit
-        if hit:
-            money_mgr.reset()
+        # 2. 决策 (Decision): 基于本期 (row) 的统计数据决定是否在下期下注
+        if evaluate_entry_rule(row, strategy.entry_rule):
+            current_bet = {
+                "target": ...,
+                "amount": money_mgr.get_next_bet(),
+                "target_period": get_next_period_id(idx)
+            }
         else:
-            money_mgr.progress()
+            current_bet = None
             
         records.append({
             "period": row['period'],
             "wallet": wallet,
-            "bet": bet_amount,
-            "profit": profit,
-            "hit": hit,
-            "omission_ref": row['omission_ref']
+            "betting_status": {
+                "last_result": { "is_hit": hit, "profit": profit, ... },
+                "next_bet": current_bet
+            }
         })
         
-        # 风控检查（爆仓？）
-        if wallet <= 0 or money_mgr.is_busted():
-            break
-            
     return records
 ```
 
@@ -454,17 +446,27 @@ class NumpyEncoder(json.JSONEncoder):
     "period": "2026005",
     "result": { "special": 27, "n1": 38, ... },
     "stats": { "omission": {...}, "freq_100": {...} },
-    "signal": { "triggered": true, "target": "color: red", "is_hit": true },
+    "betting_status": {
+        "last_result": { 
+            "period": "2026005", 
+            "is_hit": true, 
+            "profit": 18.0, 
+            "amount": 10 
+        },
+        "next_bet": { 
+            "period": "2026006", 
+            "target": "color:0", 
+            "amount": 10, 
+            "step": 0 
+        }
+    },
     "signal_evaluation": {
         "triggered": true,
         "conditions": [
             { "desc": "color omission", "actual": 6, "threshold": 5, "operator": ">=", "passed": true }
-        ],
-        "history_orders": [
-            { "period": "2026004", "target": "color:0", "amount": 10, "is_hit": true, "profit": 18.0 },
-            ...
         ]
-    }
+    },
+    "history_orders": [...]
   }
 }
 ```
