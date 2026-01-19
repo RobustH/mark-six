@@ -369,13 +369,21 @@ class BacktestSystem:
         row = self.full_df.iloc[idx]
         
         # 1. Base Data
+        # Map for colors to avoid frontend needing to know fixed colors
+        COLOR_LOOKUP = {n: (0 if n in {1, 2, 7, 8, 12, 13, 18, 19, 23, 24, 29, 30, 34, 35, 40, 45, 46} else 
+                        1 if n in {3, 4, 9, 10, 14, 15, 20, 25, 26, 31, 36, 37, 41, 42, 47, 48} else 2) 
+                        for n in range(1, 50)}
+
         result = {
             "period": row['period'],
             "date": row['date'].strftime('%Y-%m-%d'),
             "special": int(row['special']),
             "color": int(row['sp_color']),
             "zodiac": int(row['sp_zodiac']),
-            "numbers": [int(row[f'n{i}']) for i in range(1, 7)]
+            "size": int(row['sp_size']),
+            "parity": int(row['sp_parity']),
+            "numbers": [int(row[f'n{i}']) for i in range(1, 7)],
+            "numbers_colors": [COLOR_LOOKUP[int(row[f'n{i}'])] for i in range(1, 7)]
         }
         
         stats = {
