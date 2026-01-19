@@ -1,11 +1,12 @@
 import pandas as pd
+import logging
 from data_loader import load_data
 from stat_engine import calc_all_stats
 
 class BacktestSystem:
     def __init__(self, data_path: str):
         # 1. Load Data
-        import logging
+
         logging.info(f"正在加载数据: {data_path}")
         
         # 优化：Load -> Sort -> Check if stats exist -> Calc Stats if needed
@@ -51,8 +52,8 @@ class BacktestSystem:
         import time
         start_time = time.time()
         
-        if self.cached_config == config and self.cached_states:
-             return # Already cached
+        # if self.cached_config == config and self.cached_states:
+        #      return # Already cached
              
         entry_config = config.get('entry', {})
         money_config = config.get('money', {})
@@ -112,6 +113,7 @@ class BacktestSystem:
                     capital += profit
                     
                     period_trade_result = {
+                        "period": period,
                         "is_hit": True,
                         "profit": round(profit, 2),
                         "amount": current_bet['amount']
@@ -126,6 +128,7 @@ class BacktestSystem:
                     capital += profit
                     
                     period_trade_result = {
+                        "period": period,
                         "is_hit": False,
                         "profit": round(profit, 2),
                         "amount": current_bet['amount']
@@ -145,13 +148,9 @@ class BacktestSystem:
                             mar_step = 0
             
             # 2. If no active bet, check entry (for NEXT period)
-            # The bet decided here will be placed for period i+1, so we record it as 'pending' for i?
-            # Actually, the UI usually shows "What are we betting ON THIS PERIOD".
-            # If current_bet is NOT None at this point, it means we are CARRYING OVER a bet to the next period.
-            # If current_bet IS None, we look for a NEW bet.
-            
+            # We check the CURRENT period stats (row) to see if we should bet on the NEXT period.
             if current_bet is None:
-                if self._check_entry(prev_row, entry_config):
+                if self._check_entry(row, entry_config):
                     cond = entry_config['conditions'][0]
                     dim = cond['dimension']
                     val = self._get_target_info(dim, cond['value'])
@@ -178,7 +177,16 @@ class BacktestSystem:
             if current_bet:
                  # Translate internal val back to display? Or just keep simple
                  # We can store raw for now
+                 next_p_str = "Unknown"
+                 if i + 1 < len(self.records):
+                     next_p_str = str(self.records[i+1]['period'])
+                 
+                 # Debug logging
+                 if i < 10: # Only log for first few to avoid spam, or specific period
+                     logging.info(f"DEBUG: Period={period}, NextPeriod={next_p_str}, Idx={i}, Total={len(self.records)}")
+
                  bet_display = {
+                     "period": next_p_str,
                      "target": f"{current_bet['target_dim']}:{current_bet['target_val']}", 
                      "amount": current_bet['amount'],
                      "step": mar_step
@@ -197,7 +205,7 @@ class BacktestSystem:
                 equity_curve.append({"period": period, "capital": round(capital, 2)})
         
         elapsed = time.time() - start_time
-        import logging
+
         logging.info(f"Backtest simulation completed in {elapsed:.4f}s")
         
         self.cached_config = config
@@ -212,10 +220,11 @@ class BacktestSystem:
             "curve": equity_curve
         }
 
-    def _get_signal_evaluation(self, config, prev_idx):
-        prev_row = self.full_df.iloc[prev_idx]
+    def _get_signal_evaluation(self, config, current_idx):
+        # View stats of THIS period to see if it triggers entry for next
+        row = self.full_df.iloc[current_idx]
         entry_config = config.get('entry', {})
-        triggered, details = self._check_entry_detailed(prev_row, entry_config)
+        triggered, details = self._check_entry_detailed(row, entry_config)
         return {
             "triggered": bool(triggered),
             "conditions": details
@@ -314,7 +323,7 @@ class BacktestSystem:
         获取赔率。如果有配置则使用配置值，否则使用默认值。
         odds_config: { playType: 'special_color', odds: 2.8, ... }
         """
-        import logging
+
         # 如果有配置赔率且玩法类型匹配，使用配置值
         if odds_config:
             play_type = odds_config.get('playType', '')
@@ -350,7 +359,7 @@ class BacktestSystem:
         If strategy_config is provided, we ensure the simulation is run/cached for that strategy,
         then pull the specific state for the period.
         """
-        import logging
+
         logging.info(f"获取回放状态: period={period}")
         
         if period not in self.period_map:
@@ -427,6 +436,15 @@ class BacktestSystem:
                 # state_data['betting'] is the bet placed in THIS period for the NEXT period.
                 next_bet = state_data['betting']
                 
+                # Robustness: Ensure period is set
+                if next_bet:
+                    if 'period' not in next_bet or next_bet['period'] == 'Unknown':
+                        if idx + 1 < len(self.full_df):
+                            try:
+                                next_bet['period'] = str(self.full_df.iloc[idx+1]['period'])
+                            except:
+                                pass
+
                 betting_status = {
                     "last_result": last_result, # {is_hit, profit, amount}
                     "next_bet": next_bet        # {target, amount, step}
@@ -435,8 +453,8 @@ class BacktestSystem:
             # Signal Evaluation (Condition Details)
             # This logic mimics whether we WOULD enter if we were starting fresh, 
             # or simply explains the entry conditions for the next bet.
-            if idx > 0:
-                 signal_evaluation = self._get_signal_evaluation(strategy_config, idx - 1)
+            if idx >= 0:
+                 signal_evaluation = self._get_signal_evaluation(strategy_config, idx)
 
         return {
             "period": period,

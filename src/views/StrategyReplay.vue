@@ -156,25 +156,29 @@
             </template>
             
             <el-descriptions :column="2" border>
-                <el-descriptions-item label="上期结果 (Last Round)">
+                <el-descriptions-item label="下注结果 (Bet Result)">
                     <template v-if="currentState.betting_status.last_result">
                         <el-tag :type="currentState.betting_status.last_result.is_hit ? 'success' : 'danger'">
                             {{ currentState.betting_status.last_result.is_hit ? '赢 Win' : '输 Loss' }}
                         </el-tag>
                         <span style="margin-left: 10px;">
-                            (投: {{ currentState.betting_status.last_result.amount }}, 
+                            (期数: {{ currentState.betting_status.last_result.period }}, 
+                             投: {{ currentState.betting_status.last_result.amount }}, 
                              {{ currentState.betting_status.last_result.profit > 0 ? '+' : '' }}{{ currentState.betting_status.last_result.profit }})
                         </span>
                     </template>
                     <span v-else class="text-gray">无下注</span>
                 </el-descriptions-item>
                 
-                <el-descriptions-item label="本期下注 (Current Bet)">
+                <el-descriptions-item label="下期下注 (Next Bet)">
                     <template v-if="currentState.betting_status.next_bet">
                         <strong style="color: #409EFF; font-size: 1.1em;">
                             {{ currentState.betting_status.next_bet.target }}
                         </strong>
                         <el-tag effect="plain" style="margin-left: 10px;">
+                            期数: {{ currentState.betting_status.next_bet.period || '---' }}
+                        </el-tag>
+                        <el-tag effect="plain" style="margin-left: 5px;">
                             金额: {{ currentState.betting_status.next_bet.amount }}
                         </el-tag>
                         <el-tag type="warning" size="small" style="margin-left: 5px;" v-if="currentState.betting_status.next_bet.step > 0">
