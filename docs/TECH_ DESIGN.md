@@ -50,7 +50,9 @@ Architecture: Hybrid Rust/Python local desktop app
 
 - **Python (Subprocess)**:
   - 核心计算服务，保持 `BacktestSystem` 实例的长连接。
+  - **JSON 序列化**：实现自定义 `NumpyEncoder` 以支持 NumPy 数据类型 (int/float/bool/ndarray) 的无缝传输。
   - **时间正序加载**：在 `__init__` 中对数据进行 `sort_values(by='date')`，确保所有回放和回测逻辑符合时间因果律。
+  - **性能极致优化**：在加载数据后，预先使用 `to_dict('records')` 将 DataFrame 转换为字典列表，规避 `iloc` 在大型循环中的性能开销。
   - 响应前端指令，提供状态查询、全量回测及详细信号评估。
 
 > **Why?** Pandas 的向量化能力无法被 JS 替代；Python 生态拥有最完善的量化/统计库。
@@ -366,6 +368,21 @@ def run_backtest(strategy_config, df):
     return records
 ```
 
+#### D. JSON 序列化适配器 (`NumpyEncoder`)
+
+由于计算层大量使用 NumPy，默认 `json` 库无法处理其特有类型。系统实现了一个自定义编码器，确保所有输出均为标准 Python/JSON 类型：
+
+```python
+class NumpyEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer): return int(obj)
+        elif isinstance(obj, np.floating): return float(obj)
+        elif isinstance(obj, (np.bool_, np.bool)): return bool(obj)
+        elif isinstance(obj, np.ndarray): return obj.tolist()
+        elif hasattr(obj, 'item'): return obj.item()
+        return super().default(obj)
+```
+
 ---
 
 ## 4. 🔗 接口定义 (IPC Schema)
@@ -522,6 +539,8 @@ def run_backtest(strategy_config, df):
    - [x] 核心计算引擎 (Python Sidecar)
    - [x] 策略信号穿透分析 (Visualized Evaluation)
    - [x] 数据源动态切换逻辑
+   - [x] **策略回放界面增强（特码尾数、大小、单双实时数据展示）** ✅
+   - [x] **下注规则编辑器优化（维度下拉菜单、新增尾数维度）** ✅
 
 6. **Step 5: Statistics Module** [COMPLETED]
    - [x] 基于 Rust Polars 实现并算 `calculate_omission_stats`
