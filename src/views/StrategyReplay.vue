@@ -107,7 +107,83 @@
             </div>
         </el-card>
 
-        <el-divider />
+        <!-- Accumulated Analysis -->
+        <el-card v-if="currentState && currentState.accumulated_stats" class="analysis-card" style="margin-top: 15px;">
+            <template #header>
+                <div class="card-header">
+                    <span>累计回测数据 (Cumulative Analysis)</span>
+                </div>
+            </template>
+            <el-row :gutter="20">
+                <el-col :span="6">
+                   <div class="stat-box">
+                       <div class="label">当前本金 (Capital)</div>
+                       <div class="val" :class="{ profit: currentState.accumulated_stats.profit > 0, loss: currentState.accumulated_stats.profit < 0 }">
+                           {{ currentState.accumulated_stats.capital }}
+                       </div>
+                   </div>
+                </el-col>
+                <el-col :span="6">
+                   <div class="stat-box">
+                       <div class="label">累计盈亏 (Profit)</div>
+                       <div class="val" :class="{ profit: currentState.accumulated_stats.profit > 0, loss: currentState.accumulated_stats.profit < 0 }">
+                           {{ currentState.accumulated_stats.profit > 0 ? '+' : ''}}{{ currentState.accumulated_stats.profit }}
+                       </div>
+                   </div>
+                </el-col>
+                <el-col :span="6">
+                   <div class="stat-box">
+                       <div class="label">胜率 (Win Rate)</div>
+                       <div class="val">{{ (currentState.accumulated_stats.win_rate * 100).toFixed(1) }}%</div>
+                   </div>
+                </el-col>
+                 <el-col :span="6">
+                   <div class="stat-box">
+                       <div class="label">总交易数 (Trades)</div>
+                       <div class="val">{{ currentState.accumulated_stats.total_trades }}</div>
+                   </div>
+                </el-col>
+            </el-row>
+        </el-card>
+
+        <!-- Detailed Betting Status -->
+        <el-card v-if="currentState && currentState.betting_status" class="betting-status-card" style="margin-top: 15px;">
+            <template #header>
+                <div class="card-header">
+                    <span>下注详细情况 (Betting Details)</span>
+                </div>
+            </template>
+            
+            <el-descriptions :column="2" border>
+                <el-descriptions-item label="上期结果 (Last Round)">
+                    <template v-if="currentState.betting_status.last_result">
+                        <el-tag :type="currentState.betting_status.last_result.is_hit ? 'success' : 'danger'">
+                            {{ currentState.betting_status.last_result.is_hit ? '赢 Win' : '输 Loss' }}
+                        </el-tag>
+                        <span style="margin-left: 10px;">
+                            (投: {{ currentState.betting_status.last_result.amount }}, 
+                             {{ currentState.betting_status.last_result.profit > 0 ? '+' : '' }}{{ currentState.betting_status.last_result.profit }})
+                        </span>
+                    </template>
+                    <span v-else class="text-gray">无下注</span>
+                </el-descriptions-item>
+                
+                <el-descriptions-item label="本期下注 (Current Bet)">
+                    <template v-if="currentState.betting_status.next_bet">
+                        <strong style="color: #409EFF; font-size: 1.1em;">
+                            {{ currentState.betting_status.next_bet.target }}
+                        </strong>
+                        <el-tag effect="plain" style="margin-left: 10px;">
+                            金额: {{ currentState.betting_status.next_bet.amount }}
+                        </el-tag>
+                        <el-tag type="warning" size="small" style="margin-left: 5px;" v-if="currentState.betting_status.next_bet.step > 0">
+                            追号 Lv{{ currentState.betting_status.next_bet.step }}
+                        </el-tag>
+                    </template>
+                    <span v-else class="text-gray">观望中 (Wait)</span>
+                </el-descriptions-item>
+            </el-descriptions>
+        </el-card>
 
         <!-- Current Period Info -->
         <div v-if="currentState" class="period-info">
@@ -179,12 +255,59 @@ import { useStrategiesStore } from '../stores/strategies';
 import { useEntryRulesStore } from '../stores/entryRules';
 import { useMoneyRulesStore } from '../stores/moneyRules';
 
+interface ConditionResult {
+    desc: string;
+    passed: boolean;
+    operator: string;
+    threshold: number;
+    actual: number;
+}
+
+interface SignalEvaluation {
+    triggered: boolean;
+    conditions: ConditionResult[];
+}
+
+interface TradeResult {
+    is_hit: boolean;
+    profit: number;
+    amount: number;
+}
+
+interface BetInfo {
+    target: string;
+    amount: number;
+    step: number;
+}
+
+interface BettingStatus {
+    last_result: TradeResult | null;
+    next_bet: BetInfo | null;
+}
+
+interface AccumulatedStats {
+    capital: number;
+    profit: number;
+    win_rate: number;
+    total_trades: number;
+}
+
+interface ReplayState {
+    period: string;
+    result: any;
+    stats: any;
+    signal: any; // Legacy simple signal
+    signal_evaluation?: SignalEvaluation;
+    accumulated_stats?: AccumulatedStats;
+    betting_status?: BettingStatus;
+}
+
 const strategiesStore = useStrategiesStore();
 const entryRulesStore = useEntryRulesStore();
 const moneyRulesStore = useMoneyRulesStore();
 
 const loading = ref(false);
-const currentState = ref<any>(null);
+const currentState = ref<ReplayState | null>(null);
 const currentPeriod = ref(2023000);
 const isPlaying = ref(false);
 const playSpeed = ref(1000);
@@ -404,5 +527,11 @@ onUnmounted(() => {
 .stat-item { display: flex; flex-direction: column; align-items: center; padding: 5px; border: 1px solid #eee; border-radius: 4px; }
 .value { font-weight: bold; }
 .value.high { color: red; }
+.stat-box { text-align: center; }
+.stat-box .label { font-size: 12px; color: #909399; margin-bottom: 5px; }
+.stat-box .val { font-size: 20px; font-weight: bold; }
+.stat-box .val.profit { color: #67C23A; }
+.stat-box .val.loss { color: #F56C6C; }
+.text-gray { color: #909399; font-style: italic; }
 
 </style>
