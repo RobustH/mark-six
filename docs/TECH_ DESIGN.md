@@ -79,6 +79,14 @@ sequenceDiagram
     Rust->>DB: 读取对应 Feather
     Rust->>Vue: 返回序列化 JSON Data
     Vue->User: 渲染表格 (带颜色样式)
+    
+    %% 场景：在线更新
+    User->>Vue: 点击 "在线更新"
+    Vue->>Rust: Invoke `fetch_historical_data(years)`
+    Rust->>API: HTTP GET (reqwest)
+    Rust->>Rust: Parse JSON & Clean Data
+    Rust->>DB: Save feather files
+    Rust->>Vue: Success Result
 ```
 
 2. 🗄️ 数据存储层设计 (Storage Layer)
@@ -132,6 +140,15 @@ sequenceDiagram
 4.3 `get_historical_data(year?)`
 读取指定年份的 Feather 文件。若 `year` 为空或为 "全部"，则读取 `all.feather`。
 
+4.4 `get_statistics(year?: Option<String>, limit?: Option<usize>)`
+获取指定年份或全部历史的统计数据。
+- `year`: 指定年份 (e.g. "2024").
+- `limit`: 限制最近 N 期 (e.g. 100).
+- **Return**: `StatisticsReport` 包含特码(号码/生肖/波色/单双/大小/尾数)及正码(1-49)出现频率的统计。
+
+4.4 `fetch_historical_data(years: Option<Vec<String>>)`
+从远程 API 获取历史数据。若 `years` 为空，默认获取当前年份（增量更新）。支持自动数据清洗与格式修复。
+
 5. 💻 前端实现细节 (Vue 3)
 
 5.1 UI 组件
@@ -142,9 +159,10 @@ sequenceDiagram
 6. 📅 开发步骤清单 (Current Progress)
 - [x] Step 1: 基础 Tauri + Vue 搭建
 - [x] Step 2: Rust 侧 Excel 导入逻辑 (Calamine + Polars)
+- [x] Step 2b: Rust 侧 API 在线同步逻辑 (Reqwest)
 - [x] Step 3: 数据年份分组与全量汇总存储
 - [x] Step 4: 前端数据展示与样式美化 (生肖/波色/单双)
-- [ ] Step 5: 统计分析引擎 (遗漏值计算)
+- [x] Step 5: 统计分析引擎 (遗漏值/热度计算 - Native Rust 实现)
 - [ ] Step 6: 回测引擎与资金模拟
     participant Rust as 🦀 Tauri Core
     participant Py as 🐍 Python Engine
@@ -493,6 +511,12 @@ def run_backtest(strategy, df, odds_profile):
    - [x] 核心计算引擎 (Python Sidecar)
    - [x] **策略信号穿透分析 (Visualized Evaluation)**
    - [x] **数据源动态切换逻辑**
+
+6. **Step 5: Statistics Module** [COMPLETED]
+   - [x] 基于 Rust Polars 实现并算 `calculate_omission_stats`
+   - [x] 多维度统计 (特码号码/生肖/波色/单双/尾数/大小)
+   - [x] 前端可视化 (Tabs + Ranking Table)
+   - [x] 范围筛选 (Limit Support)
 
 6. **Step 5: Full Backtest Engine**
    - [ ] 实现全量数据向量化回测
