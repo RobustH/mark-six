@@ -1,7 +1,6 @@
 use calamine::{Reader, Xlsx, open_workbook, Data, XlsxError};
 use polars::prelude::*;
 use serde::{Deserialize, Serialize};
-use tauri::Manager;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -56,7 +55,7 @@ fn get_project_data_dir() -> Result<PathBuf, String> {
 }
 
 #[tauri::command]
-pub async fn import_excel(app_handle: tauri::AppHandle, file_path: String) -> Result<String, String> {
+pub async fn import_excel(_app_handle: tauri::AppHandle, file_path: String) -> Result<String, String> {
     let mut workbook: Xlsx<_> = open_workbook(&file_path).map_err(|e: XlsxError| e.to_string())?;
     
     let mut year_records: HashMap<String, Vec<HistoricalRecord>> = HashMap::new();

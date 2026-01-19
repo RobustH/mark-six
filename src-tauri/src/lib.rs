@@ -1,4 +1,13 @@
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use serde_json::Value;
+use tauri_plugin_shell::process::CommandChild;
+
 mod data_manager;
+
+pub struct PythonState {
+    pub stdin: Option<CommandChild>,
+}
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -35,7 +44,7 @@ async fn load_data_source(
     let mut state = state.lock().await;
     if let Some(child) = state.stdin.as_mut() {
         let req_id = payload.get("request_id").cloned();
-        let file_path = payload.get("file_path").and_then(|v| v.as_str()).unwrap_or("");
+        let file_path = payload.get("file_path").and_then(|v: &Value| v.as_str()).unwrap_or("");
         
         let cmd = serde_json::json!({
             "cmd": "load_data",
@@ -58,7 +67,7 @@ async fn get_replay_state(
     let mut state = state.lock().await;
     if let Some(child) = state.stdin.as_mut() {
         let req_id = payload.get("request_id").cloned();
-        let period = payload.get("period").and_then(|v| v.as_str()).unwrap_or("");
+        let period = payload.get("period").and_then(|v: &Value| v.as_str()).unwrap_or("");
         let strategy_config = payload.get("strategy_config").cloned();
 
         let cmd = serde_json::json!({
@@ -146,6 +155,7 @@ pub fn run() {
     ];
 
     tauri::Builder::default()
+        .manage(python_state)
         .plugin(tauri_plugin_sql::Builder::default().add_migrations("sqlite:mark_six.db", migrations).build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
@@ -155,7 +165,11 @@ pub fn run() {
             greet,
             data_manager::import_excel,
             data_manager::get_historical_data,
-            data_manager::get_historical_years
+            data_manager::get_historical_years,
+            run_backtest_simulation,
+            load_data_source,
+            get_replay_state,
+            get_data_stats
         ])
         .run(tauri::generate_context!())
         .expect("运行 tauri 应用时出错");
