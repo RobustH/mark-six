@@ -1,12 +1,12 @@
 import pandas as pd
 import logging
+import sys
 from data_loader import load_data
 from stat_engine import calc_all_stats
 
 class BacktestSystem:
     def __init__(self, data_path: str):
         # 1. Load Data
-
         logging.info(f"正在加载数据: {data_path}")
         
         # 优化：Load -> Sort -> Check if stats exist -> Calc Stats if needed
@@ -14,12 +14,16 @@ class BacktestSystem:
         self.raw_df = self.raw_df.sort_values(by='date', ascending=True).reset_index(drop=True)
         
         # 检查是否已经包含统计列（避免重复计算）
-        # 检查几个关键的统计列是否存在
-        required_stat_cols = ['om_color_0', 'om_color_1', 'freq_color_0_100']
+        # 检查关键的统计列是否存在 (Check for ALL dimensions to ensure completeness)
+        required_stat_cols = [
+            'om_color_0', 'om_zodiac_0', 
+            'om_size_0', 'om_parity_0', 'om_tail_0'
+        ]
+        # Only check existence, assuming if one exists, the group exists
         has_stats = all(col in self.raw_df.columns for col in required_stat_cols)
         
         if has_stats:
-            logging.info("检测到数据中已包含统计列，跳过重新计算")
+            logging.info("检测到数据中已包含所有统计列，跳过重新计算")
             # 分离原始数据和统计数据
             stat_cols = [col for col in self.raw_df.columns if col.startswith('om_') or col.startswith('freq_')]
             self.stats_df = self.raw_df[stat_cols]
@@ -28,7 +32,7 @@ class BacktestSystem:
             self.raw_df = self.raw_df[base_cols]
             self.full_df = pd.concat([self.raw_df, self.stats_df], axis=1)
         else:
-            logging.info("数据中不包含统计列，开始计算...")
+            logging.info("数据中缺少部分统计列 (可能是旧缓存)，开始重新计算...")
             self.stats_df = calc_all_stats(self.raw_df)
             self.full_df = pd.concat([self.raw_df, self.stats_df], axis=1)
             logging.info("统计列计算完成")
@@ -44,6 +48,34 @@ class BacktestSystem:
         self.cached_config = None
         self.cached_states = {} # period -> detailed_state
         self.cached_summary = None
+
+    def _determine_target_condition(self, conditions):
+        """
+        From a list of triggering conditions, determine which one defines the betting target.
+        Heuristic: Choose the most specific dimension (Number > Zodiac > Tail > Color > Parity/Size).
+        """
+        if not conditions:
+            return None
+            
+        dim_priority = {
+            'number': 10,
+            'zodiac': 8,   # 1/12
+            'tail': 7,     # 1/10
+            'color': 5,    # 1/3
+            'size': 2,     # 1/2
+            'parity': 2    # 1/2
+        }
+        
+        best_cond = conditions[0]
+        max_p = dim_priority.get(best_cond.get('dimension'), 0)
+        
+        for cond in conditions[1:]:
+            p = dim_priority.get(cond.get('dimension'), 0)
+            if p > max_p:
+                max_p = p
+                best_cond = cond
+                
+        return best_cond
 
     def _run_full_simulation(self, config):
         """
@@ -151,17 +183,19 @@ class BacktestSystem:
             # We check the CURRENT period stats (row) to see if we should bet on the NEXT period.
             if current_bet is None:
                 if self._check_entry(row, entry_config):
-                    cond = entry_config['conditions'][0]
-                    dim = cond['dimension']
-                    val = self._get_target_info(dim, cond['value'])
-                    amount = money_config.get('params', {}).get('baseBet', 10)
-                    
-                    current_bet = {
-                        "target_dim": dim,
-                        "target_val": val,
-                        "amount": amount
-                    }
-                    mar_step = 0
+                    # Smartly determine the target condition
+                    cond = self._determine_target_condition(entry_config.get('conditions', []))
+                    if cond:
+                        dim = cond['dimension']
+                        val = self._get_target_info(dim, cond['value'])
+                        amount = money_config.get('params', {}).get('baseBet', 10)
+                        
+                        current_bet = {
+                            "target_dim": dim,
+                            "target_val": val,
+                            "amount": amount
+                        }
+                        mar_step = 0
             
             # Record state currently
             # Note: 'current_bet' now represents what is active for the NEXT period (or carried over).
@@ -246,55 +280,107 @@ class BacktestSystem:
             "dates": self.raw_df['date'].dt.strftime('%Y-%m-%d').tolist() 
         }
 
+        # Configure logging to ensure it goes to stderr and doesn't break JSON protocol
+        logging.basicConfig(level=logging.INFO, stream=sys.stderr, format='[Backtester] %(message)s')
+
     def _get_target_info(self, dim, val):
-        # 将前端值映射到后端索引
+        # Robust mapping of frontend values to backend indices
+        # Ensure val is stripped if string
+        if isinstance(val, str):
+            val = val.strip()
+
         if dim == 'color':
-            m = {'red': 0, 'blue': 1, 'green': 2}
-            return m.get(val, 0)
+            m = {'red': 0, 'blue': 1, 'green': 2, '红波': 0, '蓝波': 1, '绿波': 2}
+            return m.get(val, 0) # Default to 0? Or raise?
         if dim == 'size':
-            return 1 if val == 'big' else 0
+            return 1 if val in ['big', '大'] else 0
         if dim == 'parity':
-            return 1 if val == 'odd' else 0
+            return 1 if val in ['odd', '单'] else 0
         if dim == 'zodiac':
             names = ["鼠", "牛", "虎", "兔", "龙", "蛇", "马", "羊", "猴", "鸡", "狗", "猪"]
             if val in names:
                 return names.index(val)
+            # Try parsing as integer string?
+            if isinstance(val, str) and val.isdigit():
+                return int(val)
+            if isinstance(val, int):
+                return val
         if dim == 'tail':
+            if isinstance(val, str):
+                if val.endswith('尾'): val = val.replace('尾', '')
+                return int(val)
             return int(val)
         return val
 
     def _check_condition(self, row, cond):
         ctype = cond.get('type')
         dim = cond.get('dimension')
+        val = cond.get('value')
         
-        # 从行中获取实际值
+        # Determine actual value column name
         val_name = None
+        target_idx = None
+        
+        try:
+            target_idx = self._get_target_info(dim, val)
+        except Exception as e:
+            return False, {"desc": f"Map Error: {dim}={val}", "passed": False}
+
         if ctype == 'omission':
-            target_idx = self._get_target_info(dim, cond.get('value'))
             val_name = f"om_{dim}_{target_idx}"
         elif ctype == 'window_stat':
-            target_idx = self._get_target_info(dim, cond.get('value'))
-            val_name = f"freq_{dim}_{target_idx}_100" # 暂简化为 100 窗口
+            val_name = f"freq_{dim}_{target_idx}_100" # Simplified to 100 window
             
-        if val_name and val_name in row:
-            actual = row[val_name]
-            op = cond.get('operator')
-            threshold = cond.get('threshold')
-            passed = False
-            if op == '>=': passed = actual >= threshold
-            elif op == '<=': passed = actual <= threshold
-            elif op == '==': passed = actual == threshold
-            elif op == '>': passed = actual > threshold
-            elif op == '<': passed = actual < threshold
-            
-            return bool(passed), {
-                "desc": f"{dim} {ctype}",
-                "actual": float(actual),
-                "threshold": float(threshold),
-                "operator": op,
-                "passed": bool(passed)
-            }
-        return False, {"desc": "Unknown Condition", "passed": False}
+        if val_name:
+            if val_name in row:
+                actual = row[val_name]
+                op = cond.get('operator')
+                threshold = cond.get('threshold')
+                
+                # Robust type conversion
+                try:
+                    actual = float(actual)
+                    threshold = float(threshold)
+                except:
+                    pass
+
+                passed = False
+                if op == '>=': passed = actual >= threshold
+                elif op == '<=': passed = actual <= threshold
+                elif op == '==': passed = actual == threshold
+                elif op == '>': passed = actual > threshold
+                elif op == '<': passed = actual < threshold
+                
+                return bool(passed), {
+                    "desc": f"{dim} {ctype}",
+                    "actual": actual,
+                    "threshold": threshold,
+                    "operator": op,
+                    "passed": bool(passed)
+                }
+            else:
+                # Column missing - critical debug info. 
+                # Row can be Series or Dict. keys() works for both Series and Dict (in recent pandas)
+                # But to be safe, use logic.
+                
+                keys = []
+                if hasattr(row, 'keys'):
+                    keys = row.keys()
+                elif hasattr(row, 'index'):
+                    keys = row.index
+                elif isinstance(row, dict):
+                     keys = row.keys()
+                     
+                available_cols = [c for c in keys if c.startswith(f"om_{dim}")]
+                return False, {
+                    "desc": f"Missing Col: {val_name}",
+                    "passed": False,
+                    "actual": "N/A",  # Show N/A so it appears in UI
+                    "operator": "?",
+                    "threshold": "?"
+                }
+                
+        return False, {"desc": f"Unknown Type: {ctype}", "passed": False}
 
     def _check_entry(self, row, config):
         # Legacy support for backtest run (returns boolean)
@@ -339,10 +425,8 @@ class BacktestSystem:
             mapped_type = type_map.get(dim)
             if mapped_type == play_type:
                 custom = float(odds_config.get('odds', 2.0))
-                logging.info(f"[Odds] MATCH: dim={dim}, odds={custom}")
                 return custom
             else:
-                logging.info(f"[Odds] SKIP: dim={dim}({mapped_type}) != config={play_type}")
                 pass
 
         
@@ -414,7 +498,7 @@ class BacktestSystem:
                 stats["freq_100"][f"tail_{t}"] = int(row.get(f"freq_tail_{t}_100", 0))
         except Exception as e:
             logging.error(f"读取统计列时出错: {e}")
-            logging.error(f"可用列: {list(row.index)}")
+            logging.error(f"可用列: {list(row.keys()) if hasattr(row,'keys') else 'NoKeys'}")
             # 继续执行，使用空的统计数据
 
         # 2. Strategy Data
@@ -470,7 +554,8 @@ class BacktestSystem:
             "stats": stats,
             "accumulated_stats": accumulated_stats,
             "betting_status": betting_status,
-            "signal_evaluation": signal_evaluation
+            "signal_evaluation": signal_evaluation,
+            "history_orders": self.cached_summary.get('trades', [])[-100:] if self.cached_summary else []
         }
 
     def run_backtest(self, config: dict):

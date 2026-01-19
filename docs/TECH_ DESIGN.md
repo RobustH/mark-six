@@ -53,6 +53,7 @@ Architecture: Hybrid Rust/Python local desktop app
   - **JSON 序列化**：实现自定义 `NumpyEncoder` 以支持 NumPy 数据类型 (int/float/bool/ndarray) 的无缝传输。
   - **时间正序加载**：在 `__init__` 中对数据进行 `sort_values(by='date')`，确保所有回放和回测逻辑符合时间因果律。
   - **性能极致优化**：在加载数据后，预先使用 `to_dict('records')` 将 DataFrame 转换为字典列表，规避 `iloc` 在大型循环中的性能开销。
+  - **编码安全**：在 Windows 环境下强制重配置 `sys.stdin/stdout` 为 **UTF-8**，确保中文字符（如生肖名）在 IPC 通信中不出现乱码。
   - 响应前端指令，提供状态查询、全量回测及详细信号评估。
 
 > **Why?** Pandas 的向量化能力无法被 JS 替代；Python 生态拥有最完善的量化/统计库。
@@ -358,6 +359,26 @@ def run_backtest(strategy_config, df):
         })
         
     return records
+
+def determine_target_condition(conditions):
+    """
+    智能目标锁定策略 (Heuristic Target Selection)
+    当多个条件同时触发时，选择特异性最高的维度作为下注目标。
+    Priority: Number(10) > Zodiac(8) > Tail(7) > Color(5) > Size/Parity(2)
+    """
+    priority_map = {'number': 10, 'zodiac': 8, 'tail': 7, 'color': 5, 'size': 2, 'parity': 2}
+    # Sort conditions by priority desc
+    return sorted(conditions, key=lambda c: priority_map.get(c['dimension'], 0), reverse=True)[0]
+
+def check_condition_robust(row, condition):
+    """
+    鲁棒的条件检查
+    1. 自动适配 Dict 或 Series 格式 (通过 .keys() 检测)
+    2. 检查统计列是否存在，若缺失返回明确的 `Missing Col` 错误
+    3. 支持中文/英文/数字格式的维度值自动映射 (e.g., '羊' -> 7)
+    """
+    # ... Implementation Details ...
+
 ```
 
 #### D. JSON 序列化适配器 (`NumpyEncoder`)

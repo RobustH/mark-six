@@ -25,8 +25,13 @@ class NumpyEncoder(json.JSONEncoder):
 
 def log(msg):
     # 将日志输出到 stderr，以免干扰 stdout 的通信
-    sys.stderr.write(f"[Python] {msg}\n")
-    sys.stderr.flush()
+    # Explicitly encode to utf-8 if needed, but stderr usually handles it.
+    # On Windows console it might be tricky, but for file redirection/pipe it should be fine.
+    try:
+        sys.stderr.write(f"[Python] {msg}\n")
+        sys.stderr.flush()
+    except Exception:
+        pass # Ignore logging errors
 
 def handle_load_data(params):
     global backtest_system
@@ -80,72 +85,7 @@ def handle_get_replay_state(params):
         state = backtest_system.get_replay_state(period, strategy_config)
         return {
             "status": "success",
-            "data": state  # The frontend expects 'data' prop directly for this command response wrapper? 
-                           # Actually python.ts returns 'data' field of response.
-                           # Let's check python.ts: 
-                           # const res = await callPython('get_replay_state', params);
-                           # if (res && res.status === 'ok') { currentState.value = res.data; }
-                           # So we should return { status: 'success', data: ... }
-                           # My unified handler below wraps it: { request_id:..., type:..., data: response_data }
-                           # So response_data SHOULD be just the payload?
-                           # No. python.ts `resp = JSON.parse(trimmed)`. 
-                           # Wait. `invoke` in Rust returns `Result<Value, String>`.
-                           # The Rust command reads line from stdout.
-                           # The `python-response` event payload IS the line from stdout.
-                           # `python.ts`: const resp = JSON.parse(line).
-                           # resp struct: { status, data, message, request_id }
-                           # So my response_data here must CONFORM to that struct partially?
-                           # No. `process_command` wraps `response_data` into `data` field?
-                           # Let's look at `process_command` in original main.py:
-                           # response = { "request_id": req_id, "type": "response", "data": response_data }
-                           # THIS is what `python.ts` parses? 
-                           # No, `python.ts`: `interface PythonResponse { status: ..., data: ... }`
-                           # Actually `python.ts` parses the line directly. 
-                           # The `python-response` event is just the string line.
-                           # So the JSON printed by Python MUST MATCH `PythonResponse` interface.
-                           # status: 'ok'|'error'
-                           
-                           # The original `main.py` wrapper:
-                           # response = { "request_id": req_id, "type": "response", "data": response_data }
-                           # BUT `python.ts` expects `resp.request_id` at top level.
-                           # And `resp.status`.
-                           # So `response_data` (which has "status") is nested in "data"? 
-                           # or is the "data" field in `python.ts` actually the `response_data`?
-                           
-                           # Let's re-read python.ts handle loop:
-                           # const resp = JSON.parse(trimmed) as PythonResponse;
-                           # if (resp.request_id ...)
-                           
-                           # So the JSON printed by Python MUST be:
-                           # { "request_id": "...", "status": "ok", "data": { ... } }
-                           
-                           # But `process_command` in `main.py` was doing:
-                           # response = { "request_id": ..., "type": ..., "data": response_data }
-                           # And `response_data` returned by handle functions was { "status": "success", "result": ... }
-                           
-                           # This implies `python.ts` might be mismatching or I misread `python.ts`.
-                           # checking python.ts again.
-                           # interface PythonResponse { status, data, message, request_id }
-                           # The parsed object `resp` is expected to have these properties directly.
-                           
-                           # SO, the wrapper in `main.py` WAS constructing:
-                           # { "request_id": ..., "type": ..., "data": { "status": "success", ... } }
-                           
-                           # IF python.ts reads `resp.status`, it would be undefined!
-                           # UNLESS `resp` IS `response_data` merged with `request_id`.
-                           
-                           # Let's check `python.ts` again.
-                           # `if (resp.request_id && pendingRequests.has(resp.request_id))`
-                           # If the top level JSON is { "data": { "status":... } }, then `resp.status` is undefined.
-                           
-                           # Logic check:
-                           # If I change `process_command` to flatten the structure, it will work.
-                           # { "request_id": "...", "status": "ok", "data": { ... } }
-                           
-                           # So, I will modify `process_command` to be compatible with `python.ts`.
-                           # I will ensure `handle_*` returns `data` (dict) or raises Error.
-                           # And `process_command` constructs the final JSON.
-                           
+            "data": state 
         }
     except Exception as e:
         log(f"Replay Error: {e}")
@@ -185,16 +125,10 @@ def process_command(line):
                 status = 'error'
                 message = res['message']
             else:
-                response_payload = res # .get('message') or preview? 
-                # python.ts expects 'data' prop.
-                # handle_load_data returns { status, message, preview/count }
-                # Let's allow handle functions to return the full Dict, and we merge it?
-                # Or we standardize handle functions to return `data` or raise Exception.
-                pass
+                response_payload = res 
                 
         elif cmd == "run_backtest":
             res = handle_run_backtest(params)
-             # handle returns { status, result }
             if res['status'] == 'error':
                  status = 'error'
                  message = res['message']
@@ -203,7 +137,6 @@ def process_command(line):
 
         elif cmd == "get_replay_state":
             res = handle_get_replay_state(params)
-            # handle returns { status, data }
             if res['status'] == 'error':
                  status = 'error'
                  message = res['message']
@@ -223,7 +156,6 @@ def process_command(line):
             message = f"Unknown command: {cmd}"
             
         # Construct Flat Response for python.ts
-        # python.ts checks: status (ok/error), data, message, request_id
         response = {
             "request_id": req_id,
             "status": status,
@@ -242,6 +174,16 @@ def process_command(line):
         traceback.print_exc(file=sys.stderr)
 
 def main():
+    # Force UTF-8 for stdin/stdout to handle Chinese characters correctly on Windows
+    if sys.platform.startswith('win'):
+        try:
+            sys.stdin.reconfigure(encoding='utf-8')
+            sys.stdout.reconfigure(encoding='utf-8')
+            sys.stderr.reconfigure(encoding='utf-8')
+        except Exception as e:
+            # Fallback or older python version
+            pass
+
     log("Mark Six Python Engine Started (Real Backend)")
     log(f"CWD: {os.getcwd()}")
     
