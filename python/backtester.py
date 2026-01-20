@@ -91,6 +91,11 @@ class BacktestSystem:
         money_config = config.get('money', {})
         odds_config = config.get('odds', None)  # 赔率配置（可选）
         
+        logging.info(f"--- Starting Simulation ---")
+        logging.info(f"Money Mode: {money_config.get('mode')}")
+        logging.info(f"Money Params: {money_config.get('params')}")
+        logging.info(f"Odds Config: {odds_config}")
+        
         logging.info(f"[Backtest Config] Odds: {odds_config}")
         
         initial_capital = 10000.0
@@ -100,6 +105,14 @@ class BacktestSystem:
         
         current_bet = None 
         mar_step = 0
+        current_bet = None 
+        mar_step = 0
+        accumulated_loss = 0
+        
+        # New Metrics
+        max_single_bet = 0
+        max_streak_cost = 0
+        current_streak_cost = 0
         
         # We will store state keyed by period string
         # State includes: capital_before, capital_after, current_bet_info, last_trade_result
@@ -130,7 +143,15 @@ class BacktestSystem:
             
             # Info for this period
             period_bet_info = None
+            period_bet_info = None
             period_trade_result = None
+            
+            # --- New: Track Metrics BEFORE processing result (so we count Winning bets too) ---
+            if current_bet:
+                amount = float(current_bet.get('amount', 0))
+                max_single_bet = max(max_single_bet, amount)
+                max_streak_cost = max(max_streak_cost, current_streak_cost + amount)
+            # ----------------------------------------------------------------------------------
             
             # 1. Check active bet result
             if current_bet:
@@ -155,6 +176,10 @@ class BacktestSystem:
                     
                     current_bet = None # Stop Profit
                     mar_step = 0
+                    current_bet = None # Stop Profit
+                    mar_step = 0
+                    accumulated_loss = 0
+                    current_streak_cost = 0
                 else:
                     profit = -current_bet['amount']
                     capital += profit
@@ -168,6 +193,13 @@ class BacktestSystem:
                     trades.append(period_trade_result)
                     loss_count += 1
                     
+                    # Update streak cost (for this loss)
+                    # Note: accumulated_loss for Loss Recovery mode logic handles sum of previous losses.
+                    # But generically for all modes, 'current_streak_cost' tracks money sunk in current losing streak.
+                    # It should include the bet just lost.
+                    current_streak_cost += current_bet['amount']
+                    max_streak_cost = max(max_streak_cost, current_streak_cost)
+                    
                     # Martingale
                     if money_config.get('mode') == 'martingale':
                         multipliers = money_config.get('params', {}).get('multipliers', [])
@@ -178,6 +210,50 @@ class BacktestSystem:
                         else:
                             current_bet = None # Stop Loss (Max Level)
                             mar_step = 0
+                            
+                    # Loss Recovery (Smart Chase)
+                    elif money_config.get('mode') == 'loss_recovery':
+                        accumulated_loss += float(current_bet['amount'])
+                        
+                        # Calculate required bet to recover loss + target profit (baseBet)
+                        # Formula: Bet = (Loss + Profit) / (Odds - 1)
+                        next_odds = self._get_odds(current_bet['target_dim'], odds_config)
+                        try:
+                            target_profit = float(money_config.get('params', {}).get('baseBet', 10))
+                        except:
+                            target_profit = 10.0
+                        
+                        if next_odds > 1:
+                            raw_next = (accumulated_loss + target_profit) / (next_odds - 1)
+                            # Round to integer or 1 decimal? Usually money is 2 decimals?
+                            # Mark Six usually integers? Let's keep 2 decimals for accuracy then maybe UI floors it.
+                            next_amount = round(raw_next, 2)
+                            
+                            # Ensure minimum bet (at least 1 or baseBet?)
+                            # Strategy: Should we floor at 1?
+                            if next_amount < 1: next_amount = 1.0
+
+                            # Max Bet Check
+                            max_bet = money_config.get('params', {}).get('maxBet')
+                            if max_bet:
+                                try:
+                                    max_bet = float(max_bet)
+                                    if next_amount > max_bet:
+                                        logging.info(f"Loss Recovery Stop Loss: Required {next_amount} > Max {max_bet}")
+                                        current_bet = None # Stop Loss
+                                        accumulated_loss = 0
+                                        next_amount = 0 # for safety
+                                except:
+                                    pass # Ignore bad max_bet
+
+                            if current_bet:
+                                current_bet['amount'] = next_amount
+                                logging.info(f"Loss Recalc: Loss={accumulated_loss}, Tgt={target_profit}, Odds={next_odds} -> Next={next_amount}")
+                        else:
+                            # Should not happen with valid odds, but safety break
+                            current_bet = None
+                            accumulated_loss = 0
+
             
             # 2. If no active bet, check entry (for NEXT period)
             # We check the CURRENT period stats (row) to see if we should bet on the NEXT period.
@@ -195,8 +271,17 @@ class BacktestSystem:
                             "target_val": val,
                             "amount": amount
                         }
+                        # If starting fresh streak
+                        if current_streak_cost == 0:
+                            current_streak_cost = 0 # Just to be explicit, it's 0 until first loss. 
+                            # Wait, max_streak_cost exposure includes the current bet.
+                            pass
+                            
                         mar_step = 0
             
+            # Metrics moved to start of loop to capture all bets
+            pass
+
             # Record state currently
             # Note: 'current_bet' now represents what is active for the NEXT period (or carried over).
             # But for display, if we are at period T, users want to know:
@@ -250,6 +335,8 @@ class BacktestSystem:
             "total_profit": round(capital - initial_capital, 2),
             "total_trades": len(trades),
             "win_rate": round(sum(1 for t in trades if t['is_hit']) / len(trades), 4) if trades else 0,
+            "max_single_bet": round(max_single_bet, 2),
+            "max_streak_cost": round(max_streak_cost, 2),
             "trades": trades[-50:],
             "curve": equity_curve
         }
@@ -518,7 +605,9 @@ class BacktestSystem:
                     "capital": state_data['capital'],
                     "profit": state_data['accumulated_profit'],
                     "win_rate": state_data['win_rate'],
-                    "total_trades": state_data['total_trades']
+                    "total_trades": state_data['total_trades'],
+                    "max_single_bet": self.cached_summary.get('max_single_bet', 0) if self.cached_summary else 0,
+                    "max_streak_cost": self.cached_summary.get('max_streak_cost', 0) if self.cached_summary else 0
                 }
                 
                 # Check previous period's betting to see what we did THIS period (result)

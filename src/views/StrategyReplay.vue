@@ -127,6 +127,21 @@
                 <div class="val">{{ currentState.accumulated_stats.total_trades }}</div>
               </div>
             </el-col>
+
+          </el-row>
+          <el-row :gutter="20" style="margin-top: 20px;">
+            <el-col :span="6">
+              <div class="stat-box">
+                <div class="label">最大单注 (Max Single Bet)</div>
+                <div class="val">{{ currentState.accumulated_stats.max_single_bet || 0 }}</div>
+              </div>
+            </el-col>
+             <el-col :span="6">
+              <div class="stat-box">
+                <div class="label">最大资金占用 (Max Streak Cost)</div>
+                <div class="val">{{ currentState.accumulated_stats.max_streak_cost || 0 }}</div>
+              </div>
+            </el-col>
           </el-row>
         </el-card>
 
@@ -373,6 +388,8 @@ interface AccumulatedStats {
   profit: number;
   win_rate: number;
   total_trades: number;
+  max_single_bet: number;
+  max_streak_cost: number;
 }
 
 interface ReplayState {

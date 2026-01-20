@@ -25,6 +25,9 @@
                <span v-else-if="scope.row.mode === 'martingale'">
                  起步: {{ scope.row.params.baseBet }} | 倍投: [{{ scope.row.params.multipliers?.join(', ') }}]
                </span>
+               <span v-else-if="scope.row.mode === 'loss_recovery'">
+                 智能追号: {{ scope.row.params.baseBet }} (目标盈利) | 上限: {{ scope.row.params.maxBet || '无' }}
+               </span>
             </template>
           </el-table-column>
           <el-table-column fixed="right" label="操作" width="150">
@@ -53,14 +56,24 @@
           <el-radio-group v-model="currentRule.mode" @change="handleModeChange">
             <el-radio-button label="fixed">平注 (Fixed)</el-radio-button>
             <el-radio-button label="martingale">马丁格尔 (Martingale)</el-radio-button>
+            <el-radio-button label="loss_recovery">智能追号 (Smart Chase)</el-radio-button>
           </el-radio-group>
         </el-form-item>
+
+        <div v-if="currentRule.mode === 'loss_recovery'" class="mode-desc">
+          <p>⚠️ <strong>注意：</strong> 此模式根据实时赔率自动计算下注金额。</p>
+          <p>公式：<code>下注金额 = (累计亏损 + 目标盈利) / (赔率 - 1)</code></p>
+          <p>目标盈利默认为“基础注额”。</p>
+        </div>
 
         <el-divider>参数配置 (Parameters)</el-divider>
 
         <el-form-item label="基础注额" required>
            <el-input-number v-model="currentRule.params.baseBet" :min="1" label="Base Bet" />
-           <div class="form-tip">每次下注的起始金额</div>
+           <div class="form-tip">
+             <span v-if="currentRule.mode === 'loss_recovery'">每次中奖期望获得的盈利金额 (及初始下注额)</span>
+             <span v-else>每次下注的起始金额</span>
+           </div>
         </el-form-item>
 
         <!-- Martingale Specifics -->
@@ -77,6 +90,10 @@
         </el-form-item>
         <el-form-item label="止损金额">
            <el-input-number v-model="currentRule.params.stopLoss" :min="0" placeholder="不设限" />
+        </el-form-item>
+        <el-form-item label="单注上限">
+           <el-input-number v-model="currentRule.params.maxBet" :min="0" placeholder="不设限" />
+           <div class="form-tip">防止追号金额过大导致爆仓或超出平台限额</div>
         </el-form-item>
 
       </el-form>
@@ -154,7 +171,8 @@ const formatMode = (mode: MoneyMode) => {
   const maps: Record<MoneyMode, string> = {
     fixed: '平注 (Fixed)',
     martingale: '马丁格尔 (Martingale)',
-    paroli: '帕罗利 (Paroli)'
+    paroli: '帕罗利 (Paroli)',
+    loss_recovery: '智能追号 (Smart Chase)'
   };
   return maps[mode] || mode;
 };
@@ -162,6 +180,7 @@ const formatMode = (mode: MoneyMode) => {
 const getModeType = (mode: MoneyMode) => {
   if (mode === 'fixed') return 'success';
   if (mode === 'martingale') return 'warning';
+  if (mode === 'loss_recovery') return 'danger';
   return 'info';
 };
 
@@ -228,5 +247,22 @@ const handleDelete = (id: string) => {
   color: #909399;
   line-height: 1.2;
   margin-top: 4px;
+}
+.mode-desc {
+  background: #fdf6ec;
+  padding: 10px;
+  border-radius: 4px;
+  margin-bottom: 20px;
+  font-size: 13px;
+  color: #e6a23c;
+}
+.mode-desc p {
+  margin: 4px 0;
+}
+code {
+  background: #faecd8;
+  padding: 2px 4px;
+  border-radius: 2px;
+  font-family: monospace;
 }
 </style>

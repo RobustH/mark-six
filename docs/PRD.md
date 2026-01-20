@@ -227,7 +227,7 @@
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `mode` | string | fixed / dynamic / exponential |
+| `mode` | string | fixed / martingale / loss_recovery |
 | `base_bet` | float | 基础注额 |
 | `rules` | JSON | 阶梯规则详情 |
 | `max_bet` | float | 最大注额（风控） |

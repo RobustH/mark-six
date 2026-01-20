@@ -24,7 +24,7 @@ export interface EntryRuleConfig {
     updateTime: number;
 }
 
-export type MoneyMode = 'fixed' | 'martingale' | 'paroli';
+export type MoneyMode = 'fixed' | 'martingale' | 'paroli' | 'loss_recovery';
 
 export interface MoneyRuleConfig {
     id: string;
