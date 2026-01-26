@@ -1,6 +1,6 @@
 export type RuleType = 'omission' | 'window_stat' | 'streak';
 export type Target = 'special' | 'normal';
-export type Dimension = 'number' | 'zodiac' | 'color' | 'wuxing' | 'parity' | 'size';
+export type Dimension = 'number' | 'zodiac' | 'color' | 'wuxing' | 'parity' | 'size' | 'tail';
 export type Operator = '>=' | '<=' | '==' | '>' | '<';
 
 export interface Condition {

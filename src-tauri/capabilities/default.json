@@ -16,9 +16,8 @@
       "identifier": "shell:allow-execute",
       "allow": [
         {
-          "name": "python",
-          "cmd": "python",
-          "args": true
+          "name": "bin/mark-six-engine",
+          "sidecar": true
         }
       ]
     }

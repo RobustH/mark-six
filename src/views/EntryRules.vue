@@ -17,13 +17,8 @@
           </el-table-column>
           <el-table-column label="条件概览">
             <template #default="scope">
-              <el-tag 
-                v-for="cond in scope.row.conditions" 
-                :key="cond.id" 
-                type="info" 
-                size="small" 
-                style="margin-right: 5px; margin-bottom: 5px;"
-              >
+              <el-tag v-for="cond in scope.row.conditions" :key="cond.id" type="info" size="small"
+                style="margin-right: 5px; margin-bottom: 5px;">
                 {{ formatCondition(cond) }}
               </el-tag>
             </template>
@@ -40,11 +35,7 @@
     </el-card>
 
     <!-- Rule Editor Drawer -->
-    <el-drawer
-      v-model="drawerVisible"
-      :title="isEditMode ? '编辑规则 (Edit Rule)' : '新建规则 (New Rule)'"
-      size="50%"
-    >
+    <el-drawer v-model="drawerVisible" :title="isEditMode ? '编辑规则 (Edit Rule)' : '新建规则 (New Rule)'" size="50%">
       <el-form :model="currentRule" label-width="120px">
         <el-form-item label="规则名称" required>
           <el-input v-model="currentRule.name" placeholder="例如：特码红波遗漏追号" />
@@ -61,9 +52,9 @@
         <div v-for="(cond, index) in currentRule.conditions" :key="index" class="condition-row">
           <div class="condition-header">
             <span>条件 {{ index + 1 }}</span>
-            <el-button type="danger" icon="Delete" circle size="small" @click="removeCondition(index)" />
+            <el-button type="danger" :icon="Delete" circle size="small" @click="removeCondition(index)" />
           </div>
-          
+
           <el-row :gutter="10">
             <el-col :span="6">
               <el-select v-model="cond.type" placeholder="类型" size="small">
@@ -89,40 +80,41 @@
                 <el-option label="尾数 (Tail)" value="tail" />
               </el-select>
             </el-col>
-             <el-col :span="6" v-if="cond.type === 'window_stat'">
+            <el-col :span="6" v-if="cond.type === 'window_stat'">
               <el-input v-model.number="cond.window" placeholder="窗口期数" size="small">
-                 <template #prefix>最近</template>
+                <template #prefix>最近</template>
               </el-input>
             </el-col>
           </el-row>
 
           <el-row :gutter="10" style="margin-top: 10px;">
-             <el-col :span="8">
+            <el-col :span="8">
               <!-- Value Input based on Dimension -->
               <el-select v-if="cond.dimension === 'color'" v-model="cond.value" placeholder="选择波色" size="small">
-                 <el-option label="红波" value="red" />
-                 <el-option label="蓝波" value="blue" />
-                 <el-option label="绿波" value="green" />
+                <el-option label="红波" value="red" />
+                <el-option label="蓝波" value="blue" />
+                <el-option label="绿波" value="green" />
               </el-select>
               <el-select v-else-if="cond.dimension === 'parity'" v-model="cond.value" placeholder="选择单双" size="small">
-                 <el-option label="单" value="odd" />
-                 <el-option label="双" value="even" />
+                <el-option label="单" value="odd" />
+                <el-option label="双" value="even" />
               </el-select>
               <el-select v-else-if="cond.dimension === 'size'" v-model="cond.value" placeholder="选择大小" size="small">
-                 <el-option label="大" value="big" />
-                 <el-option label="小" value="small" />
+                <el-option label="大" value="big" />
+                <el-option label="小" value="small" />
               </el-select>
               <el-select v-else-if="cond.dimension === 'wuxing'" v-model="cond.value" placeholder="选择五行" size="small">
-                 <el-option v-for="w in ['金', '木', '水', '火', '土']" :key="w" :label="w" :value="w" />
+                <el-option v-for="w in ['金', '木', '水', '火', '土']" :key="w" :label="w" :value="w" />
               </el-select>
               <el-select v-else-if="cond.dimension === 'zodiac'" v-model="cond.value" placeholder="选择生肖" size="small">
-                 <el-option v-for="z in ['鼠','牛','虎','兔','龙','蛇','马','羊','猴','鸡','狗','猪']" :key="z" :label="z" :value="z" />
+                <el-option v-for="z in ['鼠', '牛', '虎', '兔', '龙', '蛇', '马', '羊', '猴', '鸡', '狗', '猪']" :key="z" :label="z"
+                  :value="z" />
               </el-select>
               <el-select v-else-if="cond.dimension === 'tail'" v-model="cond.value" placeholder="选择尾数" size="small">
-                 <el-option v-for="t in 10" :key="t-1" :label="(t-1)+'尾'" :value="String(t-1)" />
+                <el-option v-for="t in 10" :key="t - 1" :label="(t - 1) + '尾'" :value="String(t - 1)" />
               </el-select>
               <el-input v-else v-model="cond.value" placeholder="值 (例如: 10)" size="small" />
-             </el-col>
+            </el-col>
 
             <el-col :span="6">
               <el-select v-model="cond.operator" placeholder="操作符" size="small">
@@ -139,7 +131,7 @@
           </el-row>
         </div>
 
-        <el-button type="info" plain style="width: 100%; margin-top: 10px;" icon="Plus" @click="addCondition">
+        <el-button type="info" plain style="width: 100%; margin-top: 10px;" :icon="Plus" @click="addCondition">
           添加条件
         </el-button>
 
@@ -164,7 +156,7 @@ import { Delete, Plus } from '@element-plus/icons-vue';
 const entryRulesStore = useEntryRulesStore();
 
 onMounted(() => {
-    entryRulesStore.init();
+  entryRulesStore.init();
 });
 const drawerVisible = ref(false);
 const isEditMode = ref(false);
@@ -217,8 +209,8 @@ const saveRule = () => {
     return;
   }
   if (currentRule.value.conditions.length === 0) {
-     ElMessage.error('请至少添加一个条件 (Please add at least one condition)');
-     return;
+    ElMessage.error('请至少添加一个条件 (Please add at least one condition)');
+    return;
   }
 
   if (isEditMode.value && currentRule.value.id) {
@@ -226,7 +218,7 @@ const saveRule = () => {
     ElMessage.success('更新成功 (Updated successfully)');
   } else {
     entryRulesStore.addRule(currentRule.value);
-     ElMessage.success('创建成功 (Created successfully)');
+    ElMessage.success('创建成功 (Created successfully)');
   }
   drawerVisible.value = false;
 };
@@ -254,9 +246,9 @@ const formatCondition = (cond: Condition) => {
   }
   // 如果值是特殊英文，转换显示? 也可以直接显示value
   // 这里做一个简单的映射，提升可读性
-  const map: any = { red:'红波', blue:'蓝波', green:'绿波', big:'大', small:'小', odd:'单', even:'双' };
+  const map: any = { red: '红波', blue: '蓝波', green: '绿波', big: '大', small: '小', odd: '单', even: '双' };
   const displayVal = map[String(cond.value)] || cond.value;
-  
+
   text += ` ${cond.operator} ${displayVal} (Th: ${cond.threshold})`;
   return text;
 };
@@ -268,6 +260,7 @@ const formatCondition = (cond: Condition) => {
   justify-content: space-between;
   align-items: center;
 }
+
 .condition-row {
   border: 1px dashed #409eff;
   padding: 10px;
@@ -275,6 +268,7 @@ const formatCondition = (cond: Condition) => {
   margin-bottom: 10px;
   background-color: #ecf5ff;
 }
+
 .condition-header {
   display: flex;
   justify-content: space-between;
@@ -282,5 +276,6 @@ const formatCondition = (cond: Condition) => {
   font-size: 12px;
   color: #606266;
 }
+
 /* Dark Mode Adaption for condition row if needed, element-plus style usually handles input bg */
 </style>
